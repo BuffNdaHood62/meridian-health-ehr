@@ -20,6 +20,15 @@ const typeIcon: Record<string, React.ElementType> = {
 export default function Schedule() {
   const [statusFilter, setStatusFilter] = useState("All");
 
+  const today = new Date();
+  const todayLabel = today.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const monthDay = today.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+
   const sorted = [...appointments].sort((a, b) => a.time.localeCompare(b.time));
   const filtered = sorted.filter((a) => statusFilter === "All" || a.status === statusFilter);
 
@@ -39,7 +48,7 @@ export default function Schedule() {
     <div data-testid="schedule-page">
       <PageHeader
         title="Daily Schedule"
-        subtitle="Your appointments and rounds for Saturday, January 10, 2026."
+        subtitle={`Your appointments and rounds for ${todayLabel}.`}
         actions={
           <button className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
             <Plus className="h-4 w-4" /> Block slot
@@ -52,7 +61,7 @@ export default function Schedule() {
         <div className="flex items-center gap-3">
           <CalendarDays className="h-5 w-5 text-brand-600" />
           <div>
-            <p className="text-sm font-semibold text-slate-900">Today, January 10</p>
+            <p className="text-sm font-semibold text-slate-900">Today, {monthDay}</p>
             <p className="text-xs text-slate-500">{stats.total} appointments scheduled</p>
           </div>
         </div>

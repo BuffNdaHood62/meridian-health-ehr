@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { AuthProvider, RequireAuth } from "./auth";
 import { AppLayout } from "./components/layout/AppLayout";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -23,23 +24,27 @@ function ScrollToTop() {
 
 export default function App() {
   return (
-    <HashRouter>
-      <ScrollToTop />
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route element={<AppLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="patients" element={<Patients />} />
-          <Route path="patients/:id" element={<PatientDetail />} />
-          <Route path="orders" element={<Orders />} />
-          <Route path="labs" element={<LabResults />} />
-          <Route path="history" element={<MedicalHistory />} />
-          <Route path="schedule" element={<Schedule />} />
-          <Route path="messages" element={<Messages />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </HashRouter>
+    <AuthProvider>
+      <HashRouter>
+        <ScrollToTop />
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<AppLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="patients" element={<Patients />} />
+              <Route path="patients/:id" element={<PatientDetail />} />
+              <Route path="orders" element={<Orders />} />
+              <Route path="labs" element={<LabResults />} />
+              <Route path="history" element={<MedicalHistory />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="messages" element={<Messages />} />
+              <Route path="settings" element={<Settings />} />
+            </Route>
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </HashRouter>
+    </AuthProvider>
   );
 }

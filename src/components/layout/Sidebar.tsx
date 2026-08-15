@@ -2,6 +2,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { LogOut, ShieldCheck, X } from "lucide-react";
 import { navItems } from "./nav";
 import { currentUser } from "../../data/mockData";
+import { useAuth } from "../../auth";
 import { Avatar } from "../ui/Avatar";
 import { cn } from "../../utils/cn";
 
@@ -13,9 +14,11 @@ function isActive(to: string, match: ((p: string) => boolean) | undefined, pathn
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const handleLogout = () => {
     onClose();
+    logout();
     navigate("/login");
   };
 

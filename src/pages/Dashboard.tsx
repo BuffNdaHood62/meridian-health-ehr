@@ -16,6 +16,8 @@ import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge, AcuityBadge, Badge, statusTone } from "../components/ui/Badge";
 import { GroupedBarChart, RadialGauge, TrendChart } from "../components/charts/Charts";
+import { bpTone, hrTone, spo2Tone, tempTone } from "../utils/format";
+import { cn } from "../utils/cn";
 import {
   patients,
   appointments,
@@ -33,6 +35,25 @@ export default function Dashboard() {
   const usedBeds = departmentStats.reduce((s, d) => s + d.census, 0);
   const occupancy = Math.round((usedBeds / totalBeds) * 100);
 
+  const snapshotPatient = patients.find((p) => p.status === "ICU") ?? patients[0];
+  const latestVitals = snapshotPatient.vitals[snapshotPatient.vitals.length - 1];
+
+  const toneClass: Record<"good" | "warn" | "bad", string> = {
+    good: "text-emerald-600",
+    warn: "text-amber-600",
+    bad: "text-rose-600",
+  };
+  const hrStatus = hrTone(latestVitals.hr);
+  const hrLabel = hrStatus === "good" ? "Normal" : hrStatus === "warn" ? "Elevated" : "Critical";
+  const hrToneClass = toneClass[hrStatus];
+
+  const todayLabel = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
   const nameParts = currentUser.name.split(" ");
   const greetingName = nameParts.length > 1 ? `${nameParts[0]} ${nameParts[nameParts.length - 1]}` : currentUser.name;
 
@@ -40,7 +61,7 @@ export default function Dashboard() {
     <div data-testid="dashboard-page">
       <PageHeader
         title={`Good morning, ${greetingName}`}
-        subtitle="Here's your clinical overview for today, January 10, 2026."
+        subtitle={`Here's your clinical overview for today, ${todayLabel}.`}
         actions={
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
             <Stethoscope className="h-4 w-4 text-brand-600" />
@@ -131,10 +152,10 @@ export default function Dashboard() {
         <Card>
           <CardHeader
             title="Patient Snapshot"
-            subtitle="R. Hawkins · ICU-04"
+            subtitle={`${snapshotPatient.firstName[0]}. ${snapshotPatient.lastName}${snapshotPatient.room ? ` · ${snapshotPatient.room}` : ""}`}
             icon={<Activity className="h-[18px] w-[18px]" />}
             action={
-              <Link to="/patients/P-1001" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+              <Link to={`/patients/${snapshotPatient.id}`} className="text-xs font-semibold text-brand-600 hover:text-brand-700">
                 Open chart
               </Link>
             }
@@ -142,19 +163,19 @@ export default function Dashboard() {
           <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <span className="text-xs font-medium text-slate-500">Heart Rate (bpm)</span>
-              <span className="flex items-center gap-1 text-xs font-semibold text-rose-600">
-                <TrendingUp className="h-3 w-3" /> Elevated
+              <span className={cn("flex items-center gap-1 text-xs font-semibold", hrToneClass)}>
+                <TrendingUp className="h-3 w-3" /> {hrLabel}
               </span>
             </div>
-            <TrendChart data={patients[0].vitals.map((v) => v.hr)} color="#e11d48" unit="bpm" height={110} />
+            <TrendChart data={snapshotPatient.vitals.map((v) => v.hr)} color="#e11d48" unit="bpm" height={110} />
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               {[
-                { l: "BP", v: "118/74", t: "text-amber-600" },
-                { l: "SpO₂", v: "94%", t: "text-amber-600" },
-                { l: "Temp", v: "101.2°", t: "text-rose-600" },
+                { l: "BP", v: `${latestVitals.bpSys}/${latestVitals.bpDia}`, t: toneClass[bpTone(latestVitals.bpSys)] },
+                { l: "SpO₂", v: `${latestVitals.spo2}%`, t: toneClass[spo2Tone(latestVitals.spo2)] },
+                { l: "Temp", v: `${latestVitals.temp}°`, t: toneClass[tempTone(latestVitals.temp)] },
               ].map((s) => (
                 <div key={s.l} className="rounded-xl bg-slate-50 py-2.5">
-                  <p className={`text-sm font-bold ${s.t}`}>{s.v}</p>
+                  <p className={cn("text-sm font-bold", s.t)}>{s.v}</p>
                   <p className="text-[11px] text-slate-400">{s.l}</p>
                 </div>
               ))}

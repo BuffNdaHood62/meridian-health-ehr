@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   User, Shield, Bell, Sliders, LogOut, Smartphone, KeyRound, Fingerprint,
   Moon, Stethoscope, Mail, MessageSquare, Siren, Save,
@@ -8,6 +9,7 @@ import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { currentUser } from "../data/mockData";
+import { useAuth } from "../auth";
 import { cn } from "../utils/cn";
 
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
@@ -44,6 +46,8 @@ function SettingRow({ icon: Icon, title, desc, children }: { icon: React.Element
 }
 
 export default function Settings() {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   const [twoFA, setTwoFA] = useState(true);
   const [biometric, setBiometric] = useState(false);
   const [darkChart, setDarkChart] = useState(false);
@@ -168,7 +172,13 @@ export default function Settings() {
             </div>
           </Card>
 
-          <button className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-100">
+          <button
+            onClick={() => {
+              logout();
+              navigate("/login");
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-100"
+          >
             <LogOut className="h-4 w-4" /> Sign out of all devices
           </button>
         </div>

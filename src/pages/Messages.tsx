@@ -16,15 +16,6 @@ const categoryIcon: Record<string, React.ElementType> = {
 };
 const priorityTone: Record<string, Tone> = { Urgent: "red", High: "amber", Normal: "slate" };
 
-const folders = [
-  { label: "Inbox", icon: Inbox, count: initialMessages.length },
-  { label: "Unread", icon: Mail, count: initialMessages.filter((m) => !m.read).length },
-  { label: "Urgent", icon: AlertCircle, count: initialMessages.filter((m) => m.priority === "Urgent").length },
-  { label: "Starred", icon: Star, count: 0 },
-  { label: "Sent", icon: Send, count: 0 },
-  { label: "Archive", icon: Archive, count: 0 },
-];
-
 export default function Messages() {
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [activeId, setActiveId] = useState<string>(initialMessages[0].id);
@@ -32,6 +23,15 @@ export default function Messages() {
   const [query, setQuery] = useState("");
 
   const active = messages.find((m) => m.id === activeId);
+
+  const folders = [
+    { label: "Inbox", icon: Inbox, count: messages.length },
+    { label: "Unread", icon: Mail, count: messages.filter((m) => !m.read).length },
+    { label: "Urgent", icon: AlertCircle, count: messages.filter((m) => m.priority === "Urgent").length },
+    { label: "Starred", icon: Star, count: 0 },
+    { label: "Sent", icon: Send, count: 0 },
+    { label: "Archive", icon: Archive, count: 0 },
+  ];
 
   const list = messages.filter((m) => {
     const matchesQuery =
@@ -41,7 +41,10 @@ export default function Messages() {
     const matchesFolder =
       folder === "Inbox" ||
       (folder === "Unread" && !m.read) ||
-      (folder === "Urgent" && m.priority === "Urgent");
+      (folder === "Urgent" && m.priority === "Urgent") ||
+      (folder === "Starred" && false) ||
+      (folder === "Sent" && false) ||
+      (folder === "Archive" && false);
     return matchesQuery && matchesFolder;
   });
 
@@ -137,6 +140,12 @@ export default function Messages() {
                   </button>
                 );
               })}
+              {list.length === 0 && (
+                <div className="flex flex-col items-center px-4 py-12 text-center">
+                  <Mail className="mb-2 h-8 w-8 text-slate-300" />
+                  <p className="text-sm text-slate-400">No messages in this folder</p>
+                </div>
+              )}
             </div>
           </Card>
 

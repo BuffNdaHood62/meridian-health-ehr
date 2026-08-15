@@ -5,13 +5,11 @@ export function Avatar({
   color,
   size = "md",
   className,
-  ring = false,
 }: {
   initials: string;
   color: string;
   size?: "xs" | "sm" | "md" | "lg" | "xl";
   className?: string;
-  ring?: boolean;
 }) {
   const sizes: Record<string, string> = {
     xs: "h-7 w-7 text-[10px]",
@@ -25,7 +23,6 @@ export function Avatar({
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
         sizes[size],
-        ring && "ring-2 ring-white",
         className
       )}
       style={{ backgroundColor: color }}

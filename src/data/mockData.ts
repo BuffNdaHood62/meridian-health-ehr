@@ -31,8 +31,8 @@ function genVitals(seed: number, count: number): VitalReading[] {
     dia = 78 + (seed % 7),
     spo2 = 96 + (seed % 3),
     temp = 98.4 + (seed % 3) * 0.3,
-    rr = 16 + (seed % 4),
-    pain = (seed % 4);
+    rr = 16 + (seed % 4);
+  const pain = seed % 4;
   const rand = () => {
     t = (t * 9301 + 49297) % 233280;
     return t / 233280;

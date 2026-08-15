@@ -1,17 +1,25 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { ShieldCheck, Lock, User, Activity, HeartPulse, Fingerprint } from "lucide-react";
+import { useAuth } from "../auth";
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
   const [username, setUsername] = useState("s.chen");
   const [password, setPassword] = useState("••••••••••");
   const [loading, setLoading] = useState(false);
 
+  const from = (location.state as { from?: string } | null)?.from ?? "/";
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => navigate("/"), 600);
+    setTimeout(() => {
+      login();
+      navigate(from, { replace: true });
+    }, 600);
   };
 
   return (
@@ -136,7 +144,10 @@ export default function Login() {
 
             <button
               type="button"
-              onClick={() => navigate("/")}
+              onClick={() => {
+                login();
+                navigate("/");
+              }}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
             >
               <Fingerprint className="h-4 w-4 text-brand-600" />

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, Menu, Search, Command, Plus } from "lucide-react";
-import { patients } from "../../data/mockData";
+import { patients, alerts } from "../../data/mockData";
 import { Avatar } from "../ui/Avatar";
 import { AcuityBadge } from "../ui/Badge";
 import { cn } from "../../utils/cn";
@@ -12,7 +12,16 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const [open, setOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+
+  const criticalAlerts = alerts.filter((a) => a.severity === "Critical");
+  const topNotifications = [...alerts]
+    .sort((a, b) => {
+      const rank: Record<string, number> = { Critical: 0, Warning: 1, Info: 2 };
+      return (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3);
+    })
+    .slice(0, 5);
 
   const results = query.trim()
     ? patients
@@ -34,6 +43,18 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setOpen(true);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur lg:px-6">
       <button
@@ -49,6 +70,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input
+            ref={searchInputRef}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -113,33 +135,51 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
             data-testid="notifications-button"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-              3
-            </span>
+            {criticalAlerts.length > 0 && (
+              <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
+                {criticalAlerts.length}
+              </span>
+            )}
           </button>
           {bellOpen && (
             <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/60">
               <div className="border-b border-slate-100 px-4 py-3">
                 <p className="text-sm font-semibold text-slate-900">Notifications</p>
-                <p className="text-xs text-slate-500">3 critical alerts require review</p>
+                <p className="text-xs text-slate-500">
+                  {criticalAlerts.length} critical alert{criticalAlerts.length === 1 ? "" : "s"} require review
+                </p>
               </div>
               <div className="max-h-80 overflow-y-auto">
-                {[
-                  { t: "Critical lab: R. Hawkins", d: "Lactate 3.2 mmol/L", tone: "bg-rose-500" },
-                  { t: "Critical lab: A. Bennett", d: "Glucose 312 mg/dL — DKA", tone: "bg-rose-500" },
-                  { t: "Fall risk: E. Whitfield", d: "Hourly rounding active", tone: "bg-amber-500" },
-                ].map((n, i) => (
+                {topNotifications.map((n) => (
                   <button
-                    key={i}
+                    key={n.id}
+                    onClick={() => {
+                      navigate(`/patients/${n.patientId}`);
+                      setBellOpen(false);
+                    }}
                     className="flex w-full items-start gap-3 border-b border-slate-50 px-4 py-3 text-left hover:bg-slate-50"
                   >
-                    <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", n.tone)} />
+                    <span
+                      className={cn(
+                        "mt-1.5 h-2 w-2 shrink-0 rounded-full",
+                        n.severity === "Critical"
+                          ? "bg-rose-500"
+                          : n.severity === "Warning"
+                          ? "bg-amber-500"
+                          : "bg-sky-500"
+                      )}
+                    />
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{n.t}</p>
-                      <p className="text-xs text-slate-500">{n.d}</p>
+                      <p className="text-sm font-medium text-slate-900">
+                        {n.type}: {n.patientName}
+                      </p>
+                      <p className="text-xs text-slate-500">{n.message}</p>
                     </div>
                   </button>
                 ))}
+                {topNotifications.length === 0 && (
+                  <p className="px-4 py-8 text-center text-sm text-slate-400">You're all caught up</p>
+                )}
               </div>
             </div>
           )}

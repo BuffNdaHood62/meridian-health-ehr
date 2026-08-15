@@ -11,7 +11,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { Badge, StatusBadge, AcuityBadge, flagTone, severityTone, type Tone } from "../components/ui/Badge";
 import { TrendChart, Sparkline } from "../components/charts/Charts";
 import { getPatientById } from "../data/mockData";
-import { bmi, bmiCategory, formatDate, formatDateTime } from "../utils/format";
+import { bmi, bmiCategory, formatDate, formatDateTime, bpTone, hrTone, spo2Tone, tempTone } from "../utils/format";
 import { cn } from "../utils/cn";
 
 const tabs = ["Overview", "Vitals", "Medications", "Labs", "History", "Notes"] as const;
@@ -298,11 +298,11 @@ function VitalsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> })
               {[...p.vitals].reverse().map((v) => (
                 <tr key={v.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(v.timestamp)}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[v.temp >= 100.4 ? "bad" : v.temp >= 99.6 ? "warn" : "good"])}>{v.temp}°</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[v.hr > 100 || v.hr < 55 ? "bad" : v.hr > 90 ? "warn" : "good"])}>{v.hr}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[v.bpSys >= 140 || v.bpSys < 90 ? "bad" : v.bpSys >= 130 ? "warn" : "good"])}>{v.bpSys}/{v.bpDia}</td>
+                  <td className={cn("px-5 py-3 font-medium", toneText[tempTone(v.temp)])}>{v.temp}°</td>
+                  <td className={cn("px-5 py-3 font-medium", toneText[hrTone(v.hr)])}>{v.hr}</td>
+                  <td className={cn("px-5 py-3 font-medium", toneText[bpTone(v.bpSys)])}>{v.bpSys}/{v.bpDia}</td>
                   <td className="px-5 py-3 text-slate-600">{v.rr}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[v.spo2 < 90 ? "bad" : v.spo2 < 94 ? "warn" : "good"])}>{v.spo2}%</td>
+                  <td className={cn("px-5 py-3 font-medium", toneText[spo2Tone(v.spo2)])}>{v.spo2}%</td>
                   <td className="px-5 py-3 text-slate-600">{v.pain}/10</td>
                 </tr>
               ))}

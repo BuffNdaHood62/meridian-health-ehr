@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 // ============================================================================
 // Responsive width hook — keeps SVG charts crisp at any size
@@ -56,10 +56,15 @@ export function TrendChart({
   max?: number;
 }) {
   const { ref, width } = useElementWidth<HTMLDivElement>();
+  const uid = useId();
   const W = width || 600;
   const H = height;
   const padX = 8;
   const padY = 18;
+
+  if (data.length === 0) {
+    return <div ref={ref} className="w-full" />;
+  }
 
   const lo = min ?? Math.min(...data);
   const hi = max ?? Math.max(...data);
@@ -73,7 +78,7 @@ export function TrendChart({
   const line = smoothPath(pts);
   const area = `${line} L ${pts[pts.length - 1].x} ${H} L ${pts[0].x} ${H} Z`;
   const last = pts[pts.length - 1];
-  const gid = `grad-${color.replace("#", "")}`;
+  const gid = `grad-${uid.replace(/[^a-zA-Z0-9]/g, "")}`;
 
   return (
     <div ref={ref} className="w-full" data-testid="trend-chart">
@@ -131,6 +136,7 @@ export function Sparkline({
 }) {
   const W = 90;
   const H = height;
+  if (data.length === 0) return null;
   const lo = Math.min(...data);
   const hi = Math.max(...data);
   const range = hi - lo || 1;
@@ -167,6 +173,11 @@ export function GroupedBarChart({
   const H = height;
   const padX = 24;
   const padY = 24;
+
+  if (data.length === 0) {
+    return <div ref={ref} className="w-full" />;
+  }
+
   const max = Math.max(...data.flatMap((d) => [d.admitted, d.discharged])) * 1.15;
   const groupW = (W - padX * 2) / data.length;
   const barW = Math.min(14, groupW / 3.2);
