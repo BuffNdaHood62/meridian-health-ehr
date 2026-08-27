@@ -33,12 +33,32 @@ export function bmi(weightKg: number, heightCm: number): number {
   return Math.round((weightKg / (m * m)) * 10) / 10;
 }
 
+/** Age in whole years from an ISO date of birth */
+export function ageFromDob(dobIso: string): number {
+  const dob = new Date(dobIso);
+  if (isNaN(dob.getTime())) return 0;
+  const now = new Date();
+  let age = now.getFullYear() - dob.getFullYear();
+  const beforeBirthday =
+    now.getMonth() < dob.getMonth() ||
+    (now.getMonth() === dob.getMonth() && now.getDate() < dob.getDate());
+  if (beforeBirthday) age--;
+  return age;
+}
+
 export function bmiCategory(value: number): string {
   if (value < 18.5) return "Underweight";
   if (value < 25) return "Normal";
   if (value < 30) return "Overweight";
   return "Obese";
 }
+
+/** Shared good/warn/bad → text color map for vital readings */
+export const toneTextClass: Record<"good" | "warn" | "bad", string> = {
+  good: "text-emerald-600",
+  warn: "text-amber-600",
+  bad: "text-rose-600",
+};
 
 /** Returns a tailwind text class based on whether a vitals reading is in range */
 export function bpTone(sys: number): "good" | "warn" | "bad" {

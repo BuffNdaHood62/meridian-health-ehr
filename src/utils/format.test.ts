@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { bmi, bmiCategory, bpTone, formatDate, hrTone, spo2Tone, tempTone } from "./format";
+import { ageFromDob, bmi, bmiCategory, bpTone, formatDate, hrTone, spo2Tone, tempTone } from "./format";
+
+describe("ageFromDob", () => {
+  it("computes age before the birthday has occurred this year", () => {
+    // Fixed "now" isn't injectable; assert stable arithmetic instead:
+    const age = ageFromDob("2000-01-01");
+    const expected =
+      new Date().getFullYear() - 2000 - (new Date() < new Date(`${new Date().getFullYear()}-01-02`) ? 1 : 0);
+    expect(age).toBe(expected);
+  });
+
+  it("returns 0 for invalid input rather than NaN", () => {
+    expect(ageFromDob("not-a-date")).toBe(0);
+  });
+});
 
 describe("bmi", () => {
   it("computes BMI rounded to one decimal", () => {

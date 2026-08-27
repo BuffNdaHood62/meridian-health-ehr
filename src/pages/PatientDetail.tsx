@@ -11,17 +11,13 @@ import { Avatar } from "../components/ui/Avatar";
 import { Badge, StatusBadge, AcuityBadge, flagTone, severityTone, type Tone } from "../components/ui/Badge";
 import { TrendChart, Sparkline } from "../components/charts/Charts";
 import { getPatientById } from "../data/mockData";
-import { bmi, bmiCategory, formatDate, formatDateTime, bpTone, hrTone, spo2Tone, tempTone } from "../utils/format";
+import type { Patient } from "../types";
+import { bmi, bmiCategory, formatDate, formatDateTime, bpTone, hrTone, spo2Tone, tempTone, toneTextClass, ageFromDob } from "../utils/format";
 import { cn } from "../utils/cn";
+import { ShareActions } from "../components/ui/ShareActions";
 
 const tabs = ["Overview", "Vitals", "Medications", "Labs", "History", "Notes"] as const;
 type Tab = (typeof tabs)[number];
-
-const toneText: Record<string, string> = {
-  good: "text-emerald-600",
-  warn: "text-amber-600",
-  bad: "text-rose-600",
-};
 
 export default function PatientDetail() {
   const { id } = useParams();
@@ -58,6 +54,7 @@ export default function PatientDetail() {
             >
               <ArrowLeft className="h-4 w-4" /> Back
             </Link>
+            <ShareActions patientId={p.id} patientName={`${p.firstName} ${p.lastName}`} />
             <Link
               to="/orders"
               className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
@@ -81,7 +78,7 @@ export default function PatientDetail() {
                 <AcuityBadge acuity={p.acuity} />
               </div>
               <p className="mt-1 text-sm text-slate-500">
-                {p.age}y · {p.gender} · {p.pronouns} · <span className="font-mono">{p.mrn}</span>
+                {ageFromDob(p.dateOfBirth)}y · {p.gender} · {p.pronouns} · <span className="font-mono">{p.mrn}</span>
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 <Badge tone="slate">Blood: {p.bloodType}</Badge>
@@ -101,9 +98,9 @@ export default function PatientDetail() {
               { label: "Temp", value: `${latest.temp}°`, icon: Thermometer },
             ].map((v) => (
               <div key={v.label} className="rounded-xl bg-slate-50 px-3 py-2 text-center">
-                <v.icon className="mx-auto mb-0.5 h-3.5 w-3.5 text-slate-400" />
+                <v.icon className="mx-auto mb-0.5 h-3.5 w-3.5 text-slate-500" />
                 <p className="text-sm font-bold text-slate-900">{v.value}</p>
-                <p className="text-[10px] text-slate-400">{v.label}</p>
+                <p className="text-[10px] text-slate-500">{v.label}</p>
               </div>
             ))}
           </div>
@@ -127,14 +124,16 @@ export default function PatientDetail() {
       </Card>
 
       {/* Tabs */}
-      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200">
+      <div className="mb-5 flex gap-1 overflow-x-auto border-b border-slate-200" role="tablist">
         {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
+            role="tab"
+            aria-selected={tab === t}
             data-testid={`tab-${t.toLowerCase()}`}
             className={cn(
-              "relative shrink-0 px-4 py-3 text-sm font-medium transition-colors",
+              "relative min-h-[44px] shrink-0 px-4 py-3 text-sm font-medium transition-colors",
               tab === t ? "text-brand-700" : "text-slate-500 hover:text-slate-800"
             )}
           >
@@ -156,10 +155,9 @@ export default function PatientDetail() {
 }
 
 // ---- Demographics grid (shared) --------------------------------------------
-function Demographics({ p }: { p: ReturnType<typeof getPatientById> }) {
-  if (!p) return null;
+function Demographics({ p }: { p: Patient }) {
   const items = [
-    { icon: CalendarPlus, label: "Date of Birth", value: `${formatDate(p.dateOfBirth)} (${p.age}y)` },
+    { icon: CalendarPlus, label: "Date of Birth", value: `${formatDate(p.dateOfBirth)} (${ageFromDob(p.dateOfBirth)}y)` },
     { icon: Droplet, label: "Blood Type", value: p.bloodType },
     { icon: Ruler, label: "Height", value: `${p.heightCm} cm` },
     { icon: Weight, label: "Weight", value: `${p.weightKg} kg` },
@@ -176,29 +174,29 @@ function Demographics({ p }: { p: ReturnType<typeof getPatientById> }) {
       <div className="grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2">
         {items.map((it) => (
           <div key={it.label} className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
               <it.icon className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{it.label}</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{it.label}</p>
               <p className="text-sm font-medium text-slate-800">{it.value}</p>
             </div>
           </div>
         ))}
       </div>
       <div className="border-t border-slate-100 px-5 py-4">
-        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Emergency Contact</p>
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Emergency Contact</p>
         <p className="mt-1 text-sm font-medium text-slate-800">
-          {p.emergencyContact.name} <span className="text-slate-400">({p.emergencyContact.relation})</span> · {p.emergencyContact.phone}
+          {p.emergencyContact.name} <span className="text-slate-500">({p.emergencyContact.relation})</span> · {p.emergencyContact.phone}
         </p>
       </div>
     </Card>
   );
 }
-const bmiVal = (p: NonNullable<ReturnType<typeof getPatientById>>) => bmi(p.weightKg, p.heightCm);
+const bmiVal = (p: Patient) => bmi(p.weightKg, p.heightCm);
 
 // ---- Overview tab -----------------------------------------------------------
-function OverviewTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function OverviewTab({ p }: { p: Patient }) {
   const latest = p.vitals[p.vitals.length - 1];
   const hrSeries = p.vitals.map((v) => v.hr);
   const problems = p.history.filter((h) => h.type === "Diagnosis" || h.type === "Visit").slice(0, 4);
@@ -225,7 +223,7 @@ function OverviewTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> 
                   <Sparkline data={v.series} color={v.color} />
                 </div>
                 <p className="mt-1 text-2xl font-bold text-slate-900">
-                  {v.value} <span className="text-sm font-medium text-slate-400">{v.unit}</span>
+                  {v.value} <span className="text-sm font-medium text-slate-500">{v.unit}</span>
                 </p>
               </div>
             ))}
@@ -259,7 +257,7 @@ function OverviewTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> 
 }
 
 // ---- Vitals tab -------------------------------------------------------------
-function VitalsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function VitalsTab({ p }: { p: Patient }) {
   const charts = [
     { label: "Heart Rate", unit: "bpm", series: p.vitals.map((v) => v.hr), color: "#e11d48" },
     { label: "Systolic BP", unit: "mmHg", series: p.vitals.map((v) => v.bpSys), color: "#13726c" },
@@ -284,25 +282,25 @@ function VitalsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> })
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3 font-medium">Time</th>
-                <th className="px-5 py-3 font-medium">Temp</th>
-                <th className="px-5 py-3 font-medium">HR</th>
-                <th className="px-5 py-3 font-medium">BP</th>
-                <th className="px-5 py-3 font-medium">RR</th>
-                <th className="px-5 py-3 font-medium">SpO₂</th>
-                <th className="px-5 py-3 font-medium">Pain</th>
+              <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th scope="col" className="px-5 py-3 font-medium">Time</th>
+                <th scope="col" className="px-5 py-3 font-medium">Temp</th>
+                <th scope="col" className="px-5 py-3 font-medium">HR</th>
+                <th scope="col" className="px-5 py-3 font-medium">BP</th>
+                <th scope="col" className="px-5 py-3 font-medium">RR</th>
+                <th scope="col" className="px-5 py-3 font-medium">SpO₂</th>
+                <th scope="col" className="px-5 py-3 font-medium">Pain</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {[...p.vitals].reverse().map((v) => (
                 <tr key={v.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3 text-xs text-slate-500">{formatDateTime(v.timestamp)}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[tempTone(v.temp)])}>{v.temp}°</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[hrTone(v.hr)])}>{v.hr}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[bpTone(v.bpSys)])}>{v.bpSys}/{v.bpDia}</td>
+                  <td className={cn("px-5 py-3 font-medium", toneTextClass[tempTone(v.temp)])}>{v.temp}°</td>
+                  <td className={cn("px-5 py-3 font-medium", toneTextClass[hrTone(v.hr)])}>{v.hr}</td>
+                  <td className={cn("px-5 py-3 font-medium", toneTextClass[bpTone(v.bpSys)])}>{v.bpSys}/{v.bpDia}</td>
                   <td className="px-5 py-3 text-slate-600">{v.rr}</td>
-                  <td className={cn("px-5 py-3 font-medium", toneText[spo2Tone(v.spo2)])}>{v.spo2}%</td>
+                  <td className={cn("px-5 py-3 font-medium", toneTextClass[spo2Tone(v.spo2)])}>{v.spo2}%</td>
                   <td className="px-5 py-3 text-slate-600">{v.pain}/10</td>
                 </tr>
               ))}
@@ -315,7 +313,7 @@ function VitalsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> })
 }
 
 // ---- Medications tab --------------------------------------------------------
-function MedicationsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function MedicationsTab({ p }: { p: Patient }) {
   const [filter, setFilter] = useState("All");
   const meds = p.medications.filter((m) => filter === "All" || m.status === filter);
   const statusTone: Record<string, Tone> = { Active: "green", Hold: "amber", Discontinued: "slate" };
@@ -331,8 +329,9 @@ function MedicationsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById
               <button
                 key={f}
                 onClick={() => setFilter(f)}
+                aria-pressed={filter === f}
                 className={cn(
-                  "rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors",
+                  "min-h-[44px] rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors",
                   filter === f ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 )}
               >
@@ -345,13 +344,13 @@ function MedicationsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
-              <th className="px-5 py-3 font-medium">Medication</th>
-              <th className="px-5 py-3 font-medium">Dose / Route</th>
-              <th className="px-5 py-3 font-medium">Frequency</th>
-              <th className="px-5 py-3 font-medium">Class</th>
-              <th className="px-5 py-3 font-medium">Prescriber</th>
-              <th className="px-5 py-3 font-medium">Status</th>
+            <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-500">
+              <th scope="col" className="px-5 py-3 font-medium">Medication</th>
+              <th scope="col" className="px-5 py-3 font-medium">Dose / Route</th>
+              <th scope="col" className="px-5 py-3 font-medium">Frequency</th>
+              <th scope="col" className="px-5 py-3 font-medium">Class</th>
+              <th scope="col" className="px-5 py-3 font-medium">Prescriber</th>
+              <th scope="col" className="px-5 py-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
@@ -365,7 +364,7 @@ function MedicationsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById
                     <span className="font-semibold text-slate-900">{m.name}</span>
                   </div>
                 </td>
-                <td className="px-5 py-3.5 text-slate-600">{m.dose} <span className="text-slate-400">· {m.route}</span></td>
+                <td className="px-5 py-3.5 text-slate-600">{m.dose} <span className="text-slate-500">· {m.route}</span></td>
                 <td className="px-5 py-3.5"><span className="font-mono text-xs font-medium text-slate-700">{m.frequency}</span></td>
                 <td className="px-5 py-3.5 text-slate-600">{m.class}</td>
                 <td className="px-5 py-3.5 text-xs text-slate-500">{m.prescribedBy}</td>
@@ -380,7 +379,7 @@ function MedicationsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById
 }
 
 // ---- Labs tab ---------------------------------------------------------------
-function LabsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function LabsTab({ p }: { p: Patient }) {
   const categories = [...new Set(p.labs.map((l) => l.category))];
   return (
     <div className="space-y-6">
@@ -389,15 +388,15 @@ function LabsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
         <div className="space-y-6 p-5">
           {categories.map((cat) => (
             <div key={cat}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{cat}</p>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{cat}</p>
               <div className="overflow-hidden rounded-xl border border-slate-100">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-400">
-                      <th className="px-4 py-2 font-medium">Test</th>
-                      <th className="px-4 py-2 font-medium">Result</th>
-                      <th className="px-4 py-2 font-medium">Reference</th>
-                      <th className="px-4 py-2 font-medium">Flag</th>
+                    <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <th scope="col" className="px-4 py-2 font-medium">Test</th>
+                      <th scope="col" className="px-4 py-2 font-medium">Result</th>
+                      <th scope="col" className="px-4 py-2 font-medium">Reference</th>
+                      <th scope="col" className="px-4 py-2 font-medium">Flag</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -412,7 +411,7 @@ function LabsTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
                             l.flag === "Low" && "text-amber-600",
                             l.flag === "Normal" && "text-slate-800"
                           )}>
-                            {l.value} <span className="text-xs font-normal text-slate-400">{l.unit}</span>
+                            {l.value} <span className="text-xs font-normal text-slate-500">{l.unit}</span>
                           </span>
                         </td>
                         <td className="px-4 py-2.5 text-xs text-slate-500">{l.range}</td>
@@ -451,7 +450,7 @@ const typeTone: Record<string, Tone> = {
   Visit: "slate", Vaccination: "green", Allergy: "amber",
 };
 
-function HistoryTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function HistoryTab({ p }: { p: Patient }) {
   return (
     <Card>
       <CardHeader title="Medical History" subtitle="Chronological clinical events" icon={<FileText className="h-[18px] w-[18px]" />} />
@@ -472,7 +471,7 @@ function HistoryTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }
                     <Badge tone={typeTone[h.type]}>{h.type}</Badge>
                   </div>
                   <p className="mt-1 text-sm text-slate-600">{h.description}</p>
-                  <p className="mt-2 text-xs text-slate-400">{formatDate(h.date)} · {h.provider}</p>
+                  <p className="mt-2 text-xs text-slate-500">{formatDate(h.date)} · {h.provider}</p>
                 </div>
               </li>
             );
@@ -484,7 +483,7 @@ function HistoryTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }
 }
 
 // ---- Notes tab --------------------------------------------------------------
-function NotesTab({ p }: { p: NonNullable<ReturnType<typeof getPatientById>> }) {
+function NotesTab({ p }: { p: Patient }) {
   const noteTone: Record<string, Tone> = {
     Progress: "blue", Admission: "amber", Discharge: "green", Nursing: "violet", Consult: "slate",
   };

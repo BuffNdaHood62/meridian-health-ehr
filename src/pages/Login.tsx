@@ -1,25 +1,42 @@
 import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { ShieldCheck, Lock, User, Activity, HeartPulse, Fingerprint } from "lucide-react";
+import { useNavigate, useLocation, Link } from "react-router-dom";
+import { ShieldCheck, Activity, HeartPulse, Fingerprint, Lock } from "lucide-react";
 import { useAuth } from "../auth";
+import { USERS } from "../users";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login } = useAuth();
-  const [username, setUsername] = useState("s.chen");
-  const [password, setPassword] = useState("••••••••••");
-  const [loading, setLoading] = useState(false);
+  const { login, loginWithEmail } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [selectedUser, setSelectedUser] = useState(USERS[0].id);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/";
 
-  const handleLogin = (e: React.FormEvent) => {
+  const doDemoLogin = () => {
+    setError("");
+    const err = login(selectedUser);
+    if (err) {
+      setError(err);
+      return;
+    }
+    navigate(from, { replace: true });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      login();
-      navigate(from, { replace: true });
-    }, 600);
+    setError("");
+    setBusy(true);
+    const err = await loginWithEmail(email.trim(), password);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    navigate(from, { replace: true });
   };
 
   return (
@@ -41,8 +58,8 @@ export default function Login() {
             </svg>
           </div>
           <div>
-            <p className="text-lg font-bold leading-tight">Meridian Health</p>
-            <p className="text-sm text-brand-100">Electronic Health Records</p>
+            <p className="text-lg font-bold leading-tight">Wellness with Writingale</p>
+            <p className="text-sm text-brand-100">Electronic Medical Records</p>
           </div>
         </div>
 
@@ -72,8 +89,7 @@ export default function Login() {
         </div>
 
         <div className="relative flex items-center gap-2 text-sm text-brand-100">
-          <ShieldCheck className="h-4 w-4" />
-          SOC 2 Type II · HITRUST Certified · 256-bit encryption
+          <ShieldCheck className="h-4 w-4" /> SOC 2 Type II · HITRUST Certified · 256-bit encryption
         </div>
       </div>
 
@@ -87,76 +103,108 @@ export default function Login() {
               </svg>
             </div>
             <div>
-              <p className="text-base font-bold text-slate-900">Meridian Health</p>
-              <p className="text-xs text-brand-600">EHR Platform</p>
+              <p className="text-base font-bold text-slate-900">Wellness with Writingale</p>
+              <p className="text-xs text-brand-600">EMR Platform</p>
             </div>
           </div>
 
           <h2 className="text-2xl font-bold text-slate-900">Welcome back</h2>
           <p className="mt-1 text-sm text-slate-500">Sign in to your secure clinical workspace.</p>
 
-          <form onSubmit={handleLogin} className="mt-8 space-y-4" data-testid="login-form">
+          <form onSubmit={handleSubmit} className="mt-8 space-y-4" data-testid="login-form">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Username / Provider ID</label>
-              <div className="relative">
-                <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  data-testid="login-username"
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
-                />
-              </div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Email</label>
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@clinic.org"
+                data-testid="login-email"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••••"
+                data-testid="login-password"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+              />
             </div>
 
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <label className="block text-sm font-medium text-slate-700">Password</label>
-                <button type="button" className="text-xs font-medium text-brand-600 hover:text-brand-700">
-                  Forgot?
-                </button>
-              </div>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  data-testid="login-password"
-                  className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
-                />
-              </div>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-200" />
-              This is a trusted device
-            </label>
+            {error && (
+              <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" data-testid="login-error">
+                {error}
+              </p>
+            )}
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={busy}
               data-testid="login-submit"
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-200 transition-colors hover:bg-brand-700 disabled:opacity-70"
             >
-              {loading ? "Authenticating…" : "Sign in securely"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                login();
-                navigate("/");
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-            >
-              <Fingerprint className="h-4 w-4 text-brand-600" />
-              Enter Demo Workspace
+              Sign in securely
             </button>
           </form>
 
+          <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            or use a demo account
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <div className="space-y-1.5" data-testid="login-users">
+            {USERS.map((u) => (
+              <label
+                key={u.id}
+                className={
+                  "flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm transition-colors " +
+                  (selectedUser === u.id
+                    ? "border-brand-300 bg-brand-50 ring-2 ring-brand-100"
+                    : "border-slate-200 bg-white hover:bg-slate-50")
+                }
+              >
+                <span className="flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="www-user"
+                    value={u.id}
+                    checked={selectedUser === u.id}
+                    onChange={() => setSelectedUser(u.id)}
+                    className="h-4 w-4 accent-[#13726c]"
+                  />
+                  <span className="font-medium text-slate-800">{u.name}</span>
+                </span>
+                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {u.role}
+                </span>
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={doDemoLogin}
+            data-testid="login-demo"
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <Fingerprint className="h-4 w-4 text-brand-600" /> Enter Demo Workspace
+          </button>
+
+          <p className="mt-5 text-center text-sm text-slate-500">
+            Need an account?{" "}
+            <Link to="/signup" data-testid="login-to-signup" className="font-semibold text-brand-600 hover:text-brand-700">
+              Create one
+            </Link>
+          </p>
+
           <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-            <Lock className="h-3 w-3" /> Authorized personnel only · All access is logged & audited
+            <Lock className="h-3 w-3" /> Authorized personnel only · Sessions open until sign-out · All access logged & audited
           </p>
         </div>
       </div>

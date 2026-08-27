@@ -12,6 +12,10 @@ import { currentUser } from "../data/mockData";
 import { useAuth } from "../auth";
 import { cn } from "../utils/cn";
 
+// ponytail: live account identity comes from useAuth (the real signed-in user),
+// not the static mockData demo profile. mockData supplies only demo-only meta
+// (npi/credentials/department/email) until the backend provisions them.
+
 function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
   return (
     <button
@@ -47,7 +51,11 @@ function SettingRow({ icon: Icon, title, desc, children }: { icon: React.Element
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, currentUser: liveUser } = useAuth();
+  const name = liveUser?.name ?? currentUser.name;
+  const role = liveUser?.role ?? currentUser.role;
+  const id = liveUser?.id ?? currentUser.id;
+  const initials = liveUser?.initials ?? currentUser.initials;
   const [twoFA, setTwoFA] = useState(true);
   const [biometric, setBiometric] = useState(false);
   const [darkChart, setDarkChart] = useState(false);
@@ -74,16 +82,16 @@ export default function Settings() {
             <CardHeader title="Profile" subtitle="Your provider information" icon={<User className="h-[18px] w-[18px]" />} />
             <div className="p-5">
               <div className="mb-5 flex items-center gap-4">
-                <Avatar initials={currentUser.initials} color="#13726c" size="xl" />
+                <Avatar initials={initials} color="#13726c" size="xl" />
                 <div>
-                  <p className="text-base font-bold text-slate-900">{currentUser.name}</p>
-                  <p className="text-sm text-slate-500">{currentUser.role}</p>
+                  <p className="text-base font-bold text-slate-900">{name}</p>
+                  <p className="text-sm text-slate-500">{role}</p>
                   <button className="mt-1 text-xs font-semibold text-brand-600 hover:text-brand-700">Change photo</button>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Full Name" value={currentUser.name} />
-                <Field label="Provider ID" value={currentUser.id} />
+                <Field label="Full Name" value={name} />
+                <Field label="Provider ID" value={id} />
                 <Field label="NPI Number" value={currentUser.npi} />
                 <Field label="Credentials" value={currentUser.credentials} />
                 <Field label="Department" value={currentUser.department} />
@@ -105,8 +113,8 @@ export default function Settings() {
               <SettingRow icon={Smartphone} title="Trusted devices" desc="3 devices currently authorized">
                 <button className="text-xs font-semibold text-brand-600 hover:text-brand-700">Manage</button>
               </SettingRow>
-              <SettingRow icon={Shield} title="Auto-lock session" desc="Sign out after 15 minutes of inactivity">
-                <Badge tone="green" dot>Enabled</Badge>
+              <SettingRow icon={Shield} title="Auto-lock session" desc="Sessions stay open until you sign out">
+                <Badge tone="slate" dot>Disabled</Badge>
               </SettingRow>
             </div>
           </Card>
@@ -160,7 +168,7 @@ export default function Settings() {
             <div className="space-y-2 p-5">
               {[
                 { label: "Last sign-in", value: "Today, 07:12 AM" },
-                { label: "Session IP", value: "10.42.18.6 (Meridian LAN)" },
+                { label: "Session IP", value: "10.42.18.6 (WWW LAN)" },
                 { label: "Records viewed (24h)", value: "47" },
                 { label: "Orders signed (24h)", value: "12" },
               ].map((r) => (
@@ -179,7 +187,7 @@ export default function Settings() {
             }}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-100"
           >
-            <LogOut className="h-4 w-4" /> Sign out of all devices
+            <LogOut className="h-4 w-4" /> Sign out
           </button>
         </div>
       </div>

@@ -94,7 +94,6 @@ export interface Patient {
   insurance: string;
   heightCm: number;
   weightKg: number;
-  age: number;
   avatarColor: string;
   initials: string;
   allergies: Allergy[];
@@ -137,8 +136,11 @@ export interface Message {
 
 export type OrderType = "Medication" | "Laboratory" | "Imaging" | "Referral" | "Nursing";
 
+export type AdministrationStatus = "Pending" | "Administered" | "Not Administered";
+
 export interface OrderItem {
   id: string;
+  patientId: string;
   type: OrderType;
   name: string;
   detail: string;
@@ -146,6 +148,9 @@ export interface OrderItem {
   status: "Pending" | "Active" | "Completed" | "Cancelled";
   ordered: string;
   orderedBy: string;
+  /** RFD §5 — nurse-recorded administration trail */
+  administered?: AdministrationStatus;
+  recipientName?: string;
 }
 
 export interface Alert {

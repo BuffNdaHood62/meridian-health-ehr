@@ -92,7 +92,7 @@ export default function MedicalHistory() {
       <Card className="mb-5 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -102,7 +102,7 @@ export default function MedicalHistory() {
             />
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-            <Filter className="h-4 w-4 shrink-0 text-slate-400" />
+            <Filter className="h-4 w-4 shrink-0 text-slate-500" />
             {allTypes.map((t) => (
               <button
                 key={t}
@@ -142,16 +142,16 @@ export default function MedicalHistory() {
                               <Link to={`/patients/${e.patientId}`} className="text-sm font-semibold text-slate-900 hover:text-brand-700">
                                 {e.title}
                               </Link>
-                              <p className="text-xs text-slate-400">{e.patientName}</p>
+                              <p className="text-xs text-slate-500">{e.patientName}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge tone={typeTone[e.type]}>{e.type}</Badge>
-                            <span className="text-xs text-slate-400">{formatDate(e.date)}</span>
+                            <span className="text-xs text-slate-500">{formatDate(e.date)}</span>
                           </div>
                         </div>
                         <p className="mt-2 text-sm text-slate-600">{e.description}</p>
-                        <p className="mt-2 text-xs text-slate-400">Provider: {e.provider}</p>
+                        <p className="mt-2 text-xs text-slate-500">Provider: {e.provider}</p>
                       </div>
                     </li>
                   );

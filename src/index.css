@@ -84,3 +84,95 @@ body {
 .animate-pulse-ring {
   animation: pulse-ring 2s infinite;
 }
+
+/* ============================================================================
+   Mobile responsiveness + a11y foundation
+   ============================================================================ */
+
+/* Real mobile viewport height — no jump when iOS URL bar collapses */
+.min-h-screen {
+  min-height: 100dvh;
+}
+
+/* Notch / status-bar safe padding for the sticky header */
+@supports (padding: env(safe-area-inset-top)) {
+  header.sticky {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* 44px minimum hit area for icon-only controls */
+.tappable {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Consistent keyboard focus visibility */
+:focus-visible {
+  outline: 2px solid var(--color-brand-600);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Media never overflows its container */
+img,
+video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Font fallback metrics — Inter swap without layout shift */
+@font-face {
+  font-family: "Inter-fallback";
+  src: local("Arial");
+  size-adjust: 107%;
+  ascent-override: 90%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+:root {
+  font-family: "Inter", "Inter-fallback", var(--font-sans);
+}
+
+/* ============================================================================
+   Print styles (RFD §4.5) — branded clinical record sheet
+   ============================================================================ */
+@media print {
+  /* Hide app chrome */
+  header,
+  aside,
+  nav,
+  button,
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .lg\:pl-72 {
+    padding-left: 0 !important;
+  }
+  /* Print header with brand + timestamp */
+  main::before {
+    content: "Wellness with Writingale EMR — Client Record — Printed " attr(data-print-date);
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #13726c;
+    border-bottom: 2px solid #13726c;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+  }
+  /* Keep records together, avoid awkward splits */
+  [data-testid^="patient-detail"] > * {
+    break-inside: avoid;
+  }
+}

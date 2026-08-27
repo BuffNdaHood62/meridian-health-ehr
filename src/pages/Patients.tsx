@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, Filter, AlertTriangle, ChevronRight, Users, Siren, Activity, BedDouble } from "lucide-react";
+import { Search, Filter, AlertTriangle, ChevronRight, Users, Siren, BedDouble } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge, AcuityBadge, Badge, type Tone } from "../components/ui/Badge";
 import { patients } from "../data/mockData";
-import { formatDate } from "../utils/format";
+import { formatDate, ageFromDob } from "../utils/format";
 import { cn } from "../utils/cn";
 
 const statusFilters = ["All", "ICU", "Admitted", "Observation", "Outpatient", "Discharged"] as const;
@@ -28,32 +28,31 @@ export default function Patients() {
     });
   }, [query, status]);
 
+  // RFD §4.1: Priority = acuity Critical|Serious (resolves duplicate Outpatient tile)
   const stats = {
     total: patients.length,
-    admitted: patients.filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status)).length,
-    critical: patients.filter((p) => p.acuity === "Critical").length,
-    outpatient: patients.filter((p) => p.status === "Outpatient").length,
+    scheduled: patients.filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status)).length,
+    priority: patients.filter((p) => p.acuity === "Critical" || p.acuity === "Serious").length,
   };
 
   return (
     <div data-testid="patients-page">
       <PageHeader
-        title="Patient Registry"
+        title="WWW Clients"
         subtitle="Search and manage all patients in your care network."
         actions={
           <Badge tone="brand" className="px-3 py-1.5 text-sm">
-            {stats.total} total patients
+            {stats.total} WWW clients
           </Badge>
         }
       />
 
       {/* Summary tiles */}
-      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-3">
         {[
-          { label: "Total Patients", value: stats.total, icon: Users, tone: "brand" as Tone },
-          { label: "Currently Admitted", value: stats.admitted, icon: BedDouble, tone: "blue" as Tone },
-          { label: "Critical Care", value: stats.critical, icon: Siren, tone: "red" as Tone },
-          { label: "Outpatient", value: stats.outpatient, icon: Activity, tone: "green" as Tone },
+          { label: "WWW Clients", value: stats.total, icon: Users, tone: "brand" as Tone },
+          { label: "WWW Scheduled Patients", value: stats.scheduled, icon: BedDouble, tone: "blue" as Tone },
+          { label: "WWW Priority Clients", value: stats.priority, icon: Siren, tone: "red" as Tone },
         ].map((s) => (
           <Card key={s.label} className="flex items-center gap-3 p-4">
             <span
@@ -79,7 +78,7 @@ export default function Patients() {
       <Card className="mb-5 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -89,7 +88,7 @@ export default function Patients() {
             />
           </div>
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-            <Filter className="h-4 w-4 shrink-0 text-slate-400" />
+            <Filter className="h-4 w-4 shrink-0 text-slate-500" />
             {statusFilters.map((s) => (
               <button
                 key={s}
@@ -114,15 +113,15 @@ export default function Patients() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3 font-medium">Patient</th>
-                <th className="px-5 py-3 font-medium">MRN / Age</th>
-                <th className="px-5 py-3 font-medium">Department</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Acuity</th>
-                <th className="px-5 py-3 font-medium">Allergies</th>
-                <th className="px-5 py-3 font-medium">Last Visit</th>
-                <th className="px-5 py-3" />
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th scope="col" className="px-5 py-3 font-medium">Patient</th>
+                <th scope="col" className="px-5 py-3 font-medium">MRN / Age</th>
+                <th scope="col" className="px-5 py-3 font-medium">Department</th>
+                <th scope="col" className="px-5 py-3 font-medium">Status</th>
+                <th scope="col" className="px-5 py-3 font-medium">Acuity</th>
+                <th scope="col" className="px-5 py-3 font-medium">Allergies</th>
+                <th scope="col" className="hidden px-5 py-3 font-medium sm:table-cell">Last Visit</th>
+                <th scope="col" className="px-5 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -135,13 +134,13 @@ export default function Patients() {
                         <p className="font-semibold text-slate-900 group-hover:text-brand-700">
                           {p.firstName} {p.lastName}
                         </p>
-                        <p className="text-xs text-slate-400">{p.pronouns} · {p.bloodType}</p>
+                        <p className="text-xs text-slate-500">{p.pronouns} · {p.bloodType}</p>
                       </div>
                     </Link>
                   </td>
                   <td className="px-5 py-3.5">
                     <p className="font-mono text-xs text-slate-500">{p.mrn}</p>
-                    <p className="text-xs text-slate-400">{p.age}y · {p.gender}</p>
+                    <p className="text-xs text-slate-500">{ageFromDob(p.dateOfBirth)}y · {p.gender}</p>
                   </td>
                   <td className="px-5 py-3.5 text-slate-600">{p.department}</td>
                   <td className="px-5 py-3.5"><StatusBadge status={p.status} /></td>
@@ -155,7 +154,7 @@ export default function Patients() {
                       <span className="text-xs text-slate-300">None</span>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-xs text-slate-500">{formatDate(p.history[0].date)}</td>
+                  <td className="hidden px-5 py-3.5 text-xs text-slate-500 sm:table-cell">{formatDate(p.history[0].date)}</td>
                   <td className="px-5 py-3.5">
                     <Link
                       to={`/patients/${p.id}`}
@@ -175,7 +174,7 @@ export default function Patients() {
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Search className="mb-3 h-8 w-8 text-slate-300" />
             <p className="text-sm font-medium text-slate-600">No patients found</p>
-            <p className="text-xs text-slate-400">Try adjusting your search or filters.</p>
+            <p className="text-xs text-slate-500">Try adjusting your search or filters.</p>
           </div>
         )}
       </Card>

@@ -1,16 +1,20 @@
 import { useMemo, useState } from "react";
 import {
   Pill, FlaskConical, ScanLine, Stethoscope, ClipboardList, Plus, Trash2,
-  AlertTriangle, ShieldCheck, Zap, Clock, CheckCircle2, Send, Activity, Bed,
+  AlertTriangle, ShieldCheck, Zap, Clock, CheckCircle2, Send, Activity, Bed, LockKeyhole,
   FileWarning,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
-import { Badge, StatusBadge } from "../components/ui/Badge";
+import { Badge } from "../components/ui/Badge";
 import { patients, orders as initialOrders, currentUser } from "../data/mockData";
-import type { OrderItem, OrderType } from "../types";
+import type { OrderItem, OrderType, AdministrationStatus } from "../types";
 import { runCDS, type DraftOrder } from "../utils/cds";
+import { useDoctorCode, hasDoctorCode } from "../auth-doctor";
+import { useAuth } from "../auth";
+import { appendAudit, listAudit } from "../utils/audit";
+import { formatDateTime } from "../utils/format";
 import { cn } from "../utils/cn";
 
 const orderTypes: { type: OrderType; label: string; icon: React.ElementType }[] = [
@@ -30,23 +34,113 @@ const catalog: Record<OrderType, string[]> = {
   Nursing: ["Neuro Checks Q1H", "Strict Intake & Output", "Fall Precautions", "Sequential Compression Devices", "Foley Catheter Care", "NPO After Midnight"],
 };
 
-export default function Orders() {
+// RFD §5 — doctor-code unlock screen shown in place of the order builder
+function CodeGate() {
+  const { unlock, setCode, attemptsLeft, lockedUntil } = useDoctorCode();
+  const [code, setLocal] = useState("");
+  const [error, setError] = useState("");
+  const locked = lockedUntil != null && lockedUntil > Date.now();
+
+  // ponytail: re-evaluate after unlock so the route-level step-up gate
+  // (RouteAuthenticationGate) re-evaluates on next render/navigation.
+  const recheck = () => {
+    try { sessionStorage.setItem("www-stepup-recheck", String(Date.now())); } catch { /* ignore */ }
+  };
+
+  const submit = async () => {
+    setError("");
+    if (!hasDoctorCode()) {
+      const ok = await setCode(code);
+      if (!ok) { setError("Code must be at least 8 characters."); return; }
+      recheck();
+      return;
+    }
+    const ok = await unlock(code);
+    if (!ok) {
+      setError(locked ? "Locked — try again later." : `Incorrect code. ${attemptsLeft - 1} attempt(s) left.`);
+      return;
+    }
+    recheck();
+  };
+
+  return (
+    <div className="mx-auto mt-16 max-w-sm" data-testid="orders-gate">
+      <Card className="p-6">
+        <div className="mb-4 flex items-center gap-2">
+          <LockKeyhole className="h-5 w-5 text-brand-600" />
+          <h2 className="text-base font-bold text-slate-900">Doctor code required</h2>
+        </div>
+        <p className="mb-4 text-xs text-slate-500">
+          {hasDoctorCode()
+            ? "Enter your personal doctor code to open WWW Orders. 5 wrong attempts lock this page for 15 minutes."
+            : "First time here: set a personal doctor code (min 8 characters). You will be asked for it next visit."}
+        </p>
+        <input
+          type="password"
+          value={code}
+          onChange={(e) => setLocal(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          placeholder="Doctor code"
+          data-testid="doctor-code-input"
+          aria-label="Doctor code"
+          aria-invalid={!!error}
+          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+        />
+        {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
+        <button
+          onClick={submit}
+          disabled={!code}
+          data-testid="doctor-code-submit"
+          className="mt-3 w-full rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:bg-slate-300"
+        >
+          {hasDoctorCode() ? "Unlock Orders" : "Set code & continue"}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+function OrdersInner() {
+  const { currentUser: liveUser } = useAuth();
   const [patientId, setPatientId] = useState(patients[0].id);
   const [type, setType] = useState<OrderType>("Medication");
   const [selectedName, setSelectedName] = useState("");
   const [detail, setDetail] = useState("");
   const [priority, setPriority] = useState<"Routine" | "STAT" | "Urgent">("Routine");
   const [cart, setCart] = useState<DraftOrder[]>([]);
-  const [submitted, setSubmitted] = useState<OrderItem[]>(initialOrders);
+  // ponytail: copy-on-write over shared module data; replace with reducer if flows grow
+  const [submitted, setSubmitted] = useState<OrderItem[]>([...initialOrders]);
 
-  const patient = patients.find((p) => p.id === patientId)!;
+  const patient = patients.find((p) => p.id === patientId);
 
-  const cdsResults = useMemo(() => cart.flatMap((d) => runCDS(patientId, d)), [cart, patientId]);
+  // RFD §5 — administration trail keyed by order id
+  const [adminByOrder, setAdminByOrder] = useState<Record<string, AdministrationStatus>>(() => {
+    try { return JSON.parse(localStorage.getItem("www-administrations") ?? "{}"); } catch { return {}; }
+  });
+  const [audit, setAudit] = useState(listAudit());
+
+  const setAdministration = (orderId: string, status: AdministrationStatus, recipient?: string) => {
+    const next = { ...adminByOrder, [orderId]: status };
+    setAdminByOrder(next);
+    try { localStorage.setItem("www-administrations", JSON.stringify(next)); } catch { /* ignore */ }
+    appendAudit("administer", "Order", orderId, status + (recipient ? " to " + recipient : ""));
+    setAudit(listAudit());
+  };
+
+  // Single CDS evaluation per cart item, keyed by draft id — reused by rows below
+  const cdsByDraft = useMemo(
+    () => new Map(cart.map((d) => [d.id, runCDS(patientId, d)])),
+    [cart, patientId]
+  );
+  const cdsResults = useMemo(() => [...cdsByDraft.values()].flat(), [cdsByDraft]);
   const hasBlock = cdsResults.some((r) => r.level === "danger");
+
+  // ponytail: unreachable with current mock data; guards future edits instead of `!`
+  if (!patient) return null;
 
   const addToCart = () => {
     if (!selectedName) return;
-    setCart((c) => [...c, { id: `draft-${Date.now()}`, type, name: selectedName, detail: detail || "—", priority }]);
+    setCart((c) => [...c, { id: crypto.randomUUID(), type, name: selectedName, detail: detail || "—", priority }]);
     setSelectedName("");
     setDetail("");
   };
@@ -54,26 +148,30 @@ export default function Orders() {
   const removeFromCart = (id: string) => setCart((c) => c.filter((d) => d.id !== id));
 
   const submitOrders = () => {
-    if (hasBlock) return;
-    const now = new Date().toISOString().slice(0, 16).replace("T", " ");
+    if (hasBlock || !patient) return;
+    const actor = liveUser?.name ?? currentUser.name;
+    const now = new Date().toISOString();
     const newOrders: OrderItem[] = cart.map((d) => ({
-      id: `o-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `o-${crypto.randomUUID()}`,
+      patientId,
       type: d.type,
       name: d.name,
       detail: d.detail,
       priority: d.priority,
       status: "Pending",
       ordered: now,
-      orderedBy: currentUser.name,
+      orderedBy: actor,
     }));
     setSubmitted((s) => [...newOrders, ...s]);
+    for (const o of newOrders) appendAudit("sign", "Order", o.id, o.name);
+    setAudit(listAudit());
     setCart([]);
   };
 
   return (
     <div data-testid="orders-page">
       <PageHeader
-        title="Computerized Provider Order Entry"
+        title="WWW Orders"
         subtitle="Place medication, lab, imaging, and care orders with built-in safety checks."
         actions={
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5">
@@ -85,7 +183,7 @@ export default function Orders() {
 
       {/* Patient selector */}
       <Card className="mb-6 p-4">
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-400">Ordering for</label>
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ordering for</label>
         <div className="flex flex-wrap gap-2">
           {patients.filter((p) => p.status !== "Outpatient" && p.status !== "Discharged").map((p) => (
             <button
@@ -101,7 +199,7 @@ export default function Orders() {
             >
               <Avatar initials={p.initials} color={p.avatarColor} size="xs" />
               <span className="font-medium text-slate-800">{p.firstName} {p.lastName}</span>
-              <span className="font-mono text-[10px] text-slate-400">{p.mrn}</span>
+              <span className="font-mono text-[10px] text-slate-500">{p.mrn}</span>
             </button>
           ))}
         </div>
@@ -141,14 +239,14 @@ export default function Orders() {
             <div className="space-y-4 p-5">
               {/* Quick catalog */}
               <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Quick add — {type}</p>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Quick add — {type}</p>
                 <div className="flex flex-wrap gap-2">
                   {catalog[type].map((item) => (
                     <button
                       key={item}
                       onClick={() => setSelectedName(item)}
                       className={cn(
-                        "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
+                        "min-h-[44px] rounded-lg border px-3 py-2.5 text-xs font-medium transition-colors",
                         selectedName === item ? "border-brand-300 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-600 hover:border-brand-200 hover:bg-brand-50/50"
                       )}
                     >
@@ -186,8 +284,9 @@ export default function Orders() {
                       <button
                         key={pr}
                         onClick={() => setPriority(pr)}
+                        aria-pressed={priority === pr}
                         className={cn(
-                          "flex-1 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors",
+                          "min-h-[44px] flex-1 rounded-lg border px-2 py-2.5 text-xs font-semibold transition-colors",
                           priority === pr
                             ? pr === "STAT" ? "border-rose-300 bg-rose-50 text-rose-700" : pr === "Urgent" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-brand-300 bg-brand-50 text-brand-700"
                             : "border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -220,12 +319,12 @@ export default function Orders() {
               {cart.length === 0 ? (
                 <div className="flex flex-col items-center py-8 text-center">
                   <ClipboardList className="mb-2 h-8 w-8 text-slate-200" />
-                  <p className="text-sm text-slate-400">No orders in this set yet</p>
+                  <p className="text-sm text-slate-500">No orders in this set yet</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {cart.map((d) => {
-                    const cds = runCDS(patientId, d);
+                    const cds = cdsByDraft.get(d.id) ?? [];
                     const blocked = cds.some((r) => r.level === "danger");
                     return (
                       <div key={d.id} className={cn("rounded-xl border p-3", blocked ? "border-rose-200 bg-rose-50/40" : "border-slate-200 bg-slate-50/60")}>
@@ -239,7 +338,7 @@ export default function Orders() {
                             <p className="mt-1.5 text-sm font-semibold text-slate-900">{d.name}</p>
                             <p className="text-xs text-slate-500">{d.detail}</p>
                           </div>
-                          <button onClick={() => removeFromCart(d.id)} className="rounded-lg p-1 text-slate-400 hover:bg-rose-100 hover:text-rose-600" aria-label="Remove order">
+                          <button onClick={() => removeFromCart(d.id)} className="tappable rounded-lg text-slate-500 hover:bg-rose-100 hover:text-rose-600" aria-label="Remove order">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
@@ -252,7 +351,7 @@ export default function Orders() {
               {/* CDS findings */}
               {cdsResults.length > 0 && (
                 <div className="mt-4 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Clinical Decision Support</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clinical Decision Support</p>
                   {cdsResults.map((r, i) => (
                     <div
                       key={i}
@@ -284,41 +383,115 @@ export default function Orders() {
         </div>
       </div>
 
-      {/* Existing orders */}
-      <Card className="mt-6">
-        <CardHeader title="Order History" subtitle="Active and recent orders" icon={<Activity className="h-[18px] w-[18px]" />} />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3 font-medium">Order</th>
-                <th className="px-5 py-3 font-medium">Type</th>
-                <th className="px-5 py-3 font-medium">Priority</th>
-                <th className="px-5 py-3 font-medium">Ordered</th>
-                <th className="px-5 py-3 font-medium">By</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {submitted.slice(0, 10).map((o) => (
-                <tr key={o.id} className="hover:bg-slate-50">
-                  <td className="px-5 py-3">
-                    <p className="font-semibold text-slate-900">{o.name}</p>
-                    <p className="text-xs text-slate-400">{o.detail}</p>
-                  </td>
-                  <td className="px-5 py-3"><Badge tone="slate">{o.type}</Badge></td>
-                  <td className="px-5 py-3">
-                    {o.priority === "STAT" ? <Badge tone="red" dot><Zap className="h-2.5 w-2.5" />STAT</Badge> : o.priority === "Urgent" ? <Badge tone="amber" dot>Urgent</Badge> : <span className="text-slate-500">Routine</span>}
-                  </td>
-                  <td className="px-5 py-3 text-xs text-slate-500"><Clock className="mr-1 inline h-3 w-3" />{o.ordered}</td>
-                  <td className="px-5 py-3 text-xs text-slate-500">{o.orderedBy}</td>
-                  <td className="px-5 py-3"><StatusBadge status={o.status} /></td>
+      {/* RFD §5 — Order History side tab with per-order signature + administration */}
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader title="Order History" subtitle="Active and recent orders for the selected patient" icon={<Activity className="h-[18px] w-[18px]" />} />
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th scope="col" className="px-5 py-3 font-medium">Order</th>
+                  <th scope="col" className="hidden px-5 py-3 font-medium sm:table-cell">Priority</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Ordered</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Signed by</th>
+                  <th scope="col" className="px-5 py-3 font-medium">Administered</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {submitted.filter((o) => o.patientId === patientId).slice(0, 10).map((o) => {
+                  const admin = adminByOrder[o.id] ?? "Pending";
+                  return (
+                    <tr key={o.id} className="hover:bg-slate-50">
+                      <td className="px-5 py-3">
+                        <p className="font-semibold text-slate-900">{o.name}</p>
+                        <p className="text-xs text-slate-500">{o.detail}</p>
+                      </td>
+                      <td className="hidden px-5 py-3 sm:table-cell">
+                        {o.priority === "STAT" ? <Badge tone="red" dot><Zap className="h-2.5 w-2.5" />STAT</Badge> : o.priority === "Urgent" ? <Badge tone="amber" dot>Urgent</Badge> : <span className="text-slate-500">Routine</span>}
+                      </td>
+                      <td className="px-5 py-3 text-xs text-slate-500"><Clock className="mr-1 inline h-3 w-3" />{formatDateTime(o.ordered)}</td>
+                      <td className="px-5 py-3 text-xs font-medium text-slate-700">✓ {o.orderedBy}</td>
+                      <td className="px-5 py-3">
+                        <AdministeredCell
+                          status={admin}
+                          onSet={(status, recipient) => setAdministration(o.id, status, recipient)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        {/* Side tab: audit trail (RFD §8.3) */}
+        <Card>
+          <CardHeader title="Audit Trail" subtitle="Recent clinical actions" icon={<FileWarning className="h-[18px] w-[18px]" />} />
+          <ul className="max-h-80 divide-y divide-slate-50 overflow-y-auto">
+            {audit.slice(0, 12).map((a) => (
+              <li key={a.id} className="px-4 py-2.5 text-xs">
+                <p className="font-medium text-slate-700">{a.action} · {a.entity}</p>
+                <p className="text-slate-500">{a.detail ?? a.entityId} · {formatDateTime(a.at)}</p>
+              </li>
+            ))}
+            {audit.length === 0 && <li className="px-4 py-6 text-center text-xs text-slate-400">No activity yet</li>}
+          </ul>
+        </Card>
+      </div>
     </div>
   );
+}
+
+// RFD §5 — administered enum cell with recipient capture
+function AdministeredCell({
+  status, onSet,
+}: { status: AdministrationStatus; onSet: (s: AdministrationStatus, recipient?: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [recipient, setRecipient] = useState("");
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => setEditing(true)}
+        data-testid={`admin-${status.toLowerCase()}`}
+        className="min-h-[36px] rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700"
+        aria-label={"Administered status: " + status + ". Change"}
+      >
+        {status === "Pending" ? "Mark…" : status === "Administered" ? "✓ Administered" : "✗ Not Admin."}
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1.5">
+      <select
+        value={status === "Pending" ? "" : status}
+        onChange={(e) => {
+          if (e.target.value === "Administered") { onSet("Administered", recipient || undefined); setEditing(false); }
+          else if (e.target.value === "Not Administered") { onSet("Not Administered"); setEditing(false); }
+        }}
+        aria-label="Administration status"
+        className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+      >
+        <option value="">Choose…</option>
+        <option value="Administered">Administered</option>
+        <option value="Not Administered">Not Administered</option>
+      </select>
+      <input
+        value={recipient}
+        onChange={(e) => setRecipient(e.target.value)}
+        placeholder="Recipient name"
+        aria-label="Recipient name"
+        className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs"
+      />
+    </div>
+  );
+}
+
+
+/** RFD §5: route content only renders after doctor-code unlock */
+export default function Orders() {
+  const { unlocked } = useDoctorCode();
+  return unlocked ? <OrdersInner /> : <CodeGate />;
 }

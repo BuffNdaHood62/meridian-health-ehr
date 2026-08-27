@@ -16,6 +16,40 @@ export interface CDSFinding {
   message: string;
 }
 
+// ponytail: data-driven rules over a mock patient set; scale-up = real drug/allergy
+// knowledge base (RxNorm class matching) behind the same runCDS() signature.
+interface AllergyRule {
+  /** Substring matched (lowercase, word-ish) against the patient's allergy substances */
+  allergy: string;
+  /** Order-name tokens that indicate this allergy class is being ordered */
+  triggers: string[];
+}
+
+const ALLERGY_RULES: AllergyRule[] = [
+  // Penicillin class incl. common beta-lactam relatives
+  { allergy: "penicillin", triggers: ["penicillin", "pcn", "amoxicillin", "ampicillin", "augmentin"] },
+  // Sulfonamide antibiotics
+  { allergy: "sulfa", triggers: ["sulfa", "sulfonamide", "sulfamethoxazole", "sulfadiazine"] },
+  { allergy: "aspirin", triggers: ["aspirin", "asa "] },
+  { allergy: "peanut", triggers: ["peanut"] },
+  { allergy: "latex", triggers: [] }, // contact allergen — no oral/imaging trigger in this demo
+];
+
+// Lab names that indicate impaired renal function for the metformin rule.
+const RENAL_LAB_PATTERN = /creatinine|egfr|gfr/i;
+
+/** True when any whitespace-delimited token of `name` matches a trigger */
+function matchesTrigger(nameLower: string, triggers: string[]): boolean {
+  const words = nameLower.split(/[^a-z]+/).filter(Boolean);
+  return triggers.some((t) => {
+    const trimmed = t.trim();
+    if (!trimmed) return false;
+    return trimmed.includes(" ")
+      ? nameLower.includes(trimmed)
+      : words.some((w) => w === trimmed || w.startsWith(trimmed));
+  });
+}
+
 // Clinical Decision Support — flags risks for the selected patient
 export function runCDS(patientId: string, draft: DraftOrder): CDSFinding[] {
   const patient = patients.find((p) => p.id === patientId);
@@ -23,29 +57,26 @@ export function runCDS(patientId: string, draft: DraftOrder): CDSFinding[] {
   const findings: CDSFinding[] = [];
   const name = draft.name.toLowerCase();
 
-  // Allergy check
-  patient.allergies.forEach((a) => {
-    const sub = a.substance.toLowerCase();
-    if (
-      (sub.includes("penicillin") &&
-        (name.includes("penicillin") ||
-          name.includes("amoxicillin") ||
-          name.includes("ampicillin"))) ||
-      (sub.includes("sulfa") && name.includes("sulfa")) ||
-      (sub === "aspirin" && name.includes("aspirin")) ||
-      (sub.includes("peanut") && name.includes("peanut"))
-    ) {
+  // Allergy check — one pass over data-driven rules
+  for (const rule of ALLERGY_RULES) {
+    const hasAllergy = patient.allergies.some((a) =>
+      a.substance.toLowerCase().includes(rule.allergy)
+    );
+    if (hasAllergy && matchesTrigger(name, rule.triggers)) {
+      const allergy = patient.allergies.find((a) =>
+        a.substance.toLowerCase().includes(rule.allergy)
+      )!;
       findings.push({
         level: "danger",
-        message: `Allergy conflict: ${a.substance} (${a.severity}). Order blocked — alternative required.`,
+        message: `Allergy conflict: ${allergy.substance} (${allergy.severity}). Order blocked — alternative required.`,
       });
     }
-  });
+  }
 
   // Drug interaction / class warnings
   if (
     name.includes("metformin") &&
-    patient.labs.some((l) => l.name.includes("Creatinine") && l.flag !== "Normal")
+    patient.labs.some((l) => RENAL_LAB_PATTERN.test(l.name) && l.flag !== "Normal")
   ) {
     findings.push({
       level: "warning",

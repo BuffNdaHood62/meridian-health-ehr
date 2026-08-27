@@ -9,6 +9,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
 import { messages as initialMessages } from "../data/mockData";
 import type { Message } from "../types";
+import { formatDateTime } from "../utils/format";
 import { cn } from "../utils/cn";
 
 const categoryIcon: Record<string, React.ElementType> = {
@@ -100,7 +101,7 @@ export default function Messages() {
           <Card className="overflow-hidden">
             <div className="border-b border-slate-100 p-3">
               <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -128,12 +129,12 @@ export default function Messages() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className={cn("truncate text-sm", m.read ? "font-medium text-slate-700" : "font-bold text-slate-900")}>{m.from}</p>
-                        <span className="shrink-0 text-[11px] text-slate-400">{m.time}</span>
+                        <span className="shrink-0 text-[11px] text-slate-500">{formatDateTime(m.time)}</span>
                       </div>
                       <p className={cn("truncate text-xs", m.read ? "text-slate-500" : "font-semibold text-slate-700")}>{m.subject}</p>
-                      <p className="truncate text-xs text-slate-400">{m.preview}</p>
+                      <p className="truncate text-xs text-slate-500">{m.preview}</p>
                       <div className="mt-1.5 flex items-center gap-1.5">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400"><CatIcon className="h-3 w-3" />{m.category}</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-500"><CatIcon className="h-3 w-3" />{m.category}</span>
                         {m.priority !== "Normal" && <Badge tone={priorityTone[m.priority]}>{m.priority}</Badge>}
                       </div>
                     </div>
@@ -143,7 +144,7 @@ export default function Messages() {
               {list.length === 0 && (
                 <div className="flex flex-col items-center px-4 py-12 text-center">
                   <Mail className="mb-2 h-8 w-8 text-slate-300" />
-                  <p className="text-sm text-slate-400">No messages in this folder</p>
+                  <p className="text-sm text-slate-500">No messages in this folder</p>
                 </div>
               )}
             </div>
@@ -161,11 +162,11 @@ export default function Messages() {
                   <Avatar initials={active.from.split(" ").map((w) => w[0]).join("").slice(0, 2)} color="#13726c" size="md" />
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-slate-900">{active.from}</p>
-                    <p className="text-xs text-slate-500">{active.fromRole} · {active.time}</p>
+                    <p className="text-xs text-slate-500">{active.fromRole} · {formatDateTime(active.time)}</p>
                   </div>
                   <div className="flex gap-1">
-                    <button className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="Reply"><CornerUpLeft className="h-4 w-4" /></button>
-                    <button className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="Delete"><Trash2 className="h-4 w-4" /></button>
+                    <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-600" aria-label="Reply"><CornerUpLeft className="h-4 w-4" /></button>
+                    <button className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600" aria-label="Delete"><Trash2 className="h-4 w-4" /></button>
                   </div>
                 </div>
               </div>
@@ -174,8 +175,8 @@ export default function Messages() {
               </div>
               <div className="border-t border-slate-100 p-4">
                 <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <input placeholder="Write a reply…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" />
-                  <button className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200" aria-label="Attach"><Paperclip className="h-4 w-4" /></button>
+                  <input placeholder="Write a reply…" className="flex-1 bg-transparent text-sm outline-none placeholder:text-slate-500" />
+                  <button className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-200" aria-label="Attach"><Paperclip className="h-4 w-4" /></button>
                   <button className="rounded-lg bg-brand-600 p-1.5 text-white hover:bg-brand-700" aria-label="Send"><Send className="h-4 w-4" /></button>
                 </div>
               </div>
@@ -184,14 +185,14 @@ export default function Messages() {
             <Card className="flex items-center justify-center p-12 text-center">
               <div>
                 <Mail className="mx-auto mb-3 h-8 w-8 text-slate-300" />
-                <p className="text-sm text-slate-400">Select a message to read</p>
+                <p className="text-sm text-slate-500">Select a message to read</p>
               </div>
             </Card>
           )}
         </div>
       </div>
 
-      <p className="mt-4 text-center text-xs text-slate-400">
+      <p className="mt-4 text-center text-xs text-slate-500">
         <span className="font-semibold text-slate-500">{unreadCount} unread</span> · Messages are encrypted end-to-end and audited per HIPAA policy
       </p>
     </div>

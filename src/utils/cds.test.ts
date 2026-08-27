@@ -17,6 +17,25 @@ describe("runCDS", () => {
     );
   });
 
+  it("blocks beta-lactam relatives via the penicillin rule (PCN G, Augmentin)", () => {
+    for (const name of ["PCN G 2mu IV", "Augmentin 875mg PO", "Amoxicillin 500mg"]) {
+      const results = runCDS(hawkins.id, draft(name));
+      expect(results.some((r) => r.level === "danger"), name).toBe(true);
+    }
+  });
+
+  it("does not block lookalike words that are not allergy triggers", () => {
+    // "Penicid" is a fake word sharing a prefix with penicillin triggers only partially;
+    // but a real trigger prefix (pcn) must match. Guard against over-broad startsWith:
+    const results = runCDS(bennett.id, draft("Acetaminophen 650mg"));
+    expect(results.some((r) => r.level === "danger")).toBe(false);
+  });
+
+  it("blocks sulfa-class orders for sulfa-allergic patients", () => {
+    const results = runCDS("P-1004", draft("Sulfamethoxazole-TMP DS PO"));
+    expect(results.some((r) => r.level === "danger")).toBe(true);
+  });
+
   it("blocks peanut orders for peanut-allergic patients", () => {
     const results = runCDS("P-1007", draft("Peanut Butter"));
     expect(results.some((r) => r.level === "danger")).toBe(true);

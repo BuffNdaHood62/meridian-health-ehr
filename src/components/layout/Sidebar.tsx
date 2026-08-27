@@ -1,5 +1,6 @@
+import { useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { LogOut, ShieldCheck, X } from "lucide-react";
+import { LogOut, ShieldCheck, X, UserPlus } from "lucide-react";
 import { navItems } from "./nav";
 import { currentUser } from "../../data/mockData";
 import { useAuth } from "../../auth";
@@ -15,6 +16,14 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { logout } = useAuth();
+
+  // Escape closes the mobile drawer
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen, onClose]);
 
   const handleLogout = () => {
     onClose();
@@ -50,13 +59,13 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
               </svg>
             </div>
             <div>
-              <p className="text-sm font-bold leading-tight text-slate-900">Meridian Health</p>
-              <p className="text-[11px] font-medium leading-tight text-brand-600">EHR Platform</p>
+              <p className="text-sm font-bold leading-tight text-slate-900">Wellness with Writingale</p>
+              <p className="text-[11px] font-medium leading-tight text-brand-600">EMR Platform</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden"
+            className="tappable rounded-lg text-slate-500 hover:bg-slate-100 lg:hidden"
             aria-label="Close navigation"
           >
             <X className="h-5 w-5" />
@@ -65,8 +74,8 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Clinical Workspace
+          <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            WWW Clinical Workspace
           </p>
           {navItems.map((item) => {
             const active = isActive(item.to, item.match, pathname);
@@ -87,7 +96,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
                 <Icon
                   className={cn(
                     "h-[18px] w-[18px] shrink-0",
-                    active ? "text-brand-600" : "text-slate-400 group-hover:text-slate-600"
+                    active ? "text-brand-600" : "text-slate-500 group-hover:text-slate-600"
                   )}
                 />
                 {item.label}
@@ -103,7 +112,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             <div>
               <p className="text-[11px] font-semibold text-emerald-800">HIPAA Secure Session</p>
-              <p className="text-[10px] leading-tight text-emerald-600">Encrypted · Auto-lock 15m</p>
+              <p className="text-[10px] leading-tight text-emerald-600">Encrypted · no idle auto-lock</p>
             </div>
           </div>
 
@@ -114,10 +123,10 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
             }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-slate-50"
           >
-            <Avatar initials={currentUser.initials} color="#13726c" size="sm" />
+            <Avatar initials={(useAuth().currentUser?.initials) ?? currentUser.initials} color="#13726c" size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{currentUser.name}</p>
-              <p className="truncate text-xs text-slate-500">{currentUser.id}</p>
+              <p className="truncate text-sm font-semibold text-slate-900">{(useAuth().currentUser?.name) ?? currentUser.name}</p>
+              <p className="truncate text-xs text-slate-500">{useAuth().currentUser?.id ?? currentUser.id}</p>
             </div>
           </button>
 
@@ -128,6 +137,22 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           >
             <LogOut className="h-[18px] w-[18px]" />
             Sign out
+          </button>
+
+          <button
+            onClick={() => {
+              // ponytail: multi-account = one account per browser tab. Switching
+              // means signing out this tab and returning to the picker; open a new
+              // tab to keep both sessions live (server impl: account switcher).
+              onClose();
+              logout();
+              navigate("/login");
+            }}
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50"
+            data-testid="switch-account-button"
+          >
+            <UserPlus className="h-[18px] w-[18px]" />
+            Switch account
           </button>
         </div>
       </aside>

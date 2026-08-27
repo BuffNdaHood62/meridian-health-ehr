@@ -102,7 +102,7 @@ export default function LabResults() {
       <Card className="mb-5 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -133,13 +133,13 @@ export default function LabResults() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="px-5 py-3 font-medium">Patient</th>
-                <th className="px-5 py-3 font-medium">Test</th>
-                <th className="px-5 py-3 font-medium">Result</th>
-                <th className="px-5 py-3 font-medium">Reference Range</th>
-                <th className="px-5 py-3 font-medium">Flag</th>
-                <th className="px-5 py-3 font-medium">Collected</th>
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-xs uppercase tracking-wide text-slate-500">
+                <th scope="col" className="px-5 py-3 font-medium">Patient</th>
+                <th scope="col" className="px-5 py-3 font-medium">Test</th>
+                <th scope="col" className="px-5 py-3 font-medium">Result</th>
+                <th scope="col" className="px-5 py-3 font-medium">Reference Range</th>
+                <th scope="col" className="px-5 py-3 font-medium">Flag</th>
+                <th scope="col" className="hidden px-5 py-3 font-medium sm:table-cell">Collected</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -150,13 +150,13 @@ export default function LabResults() {
                       <Avatar initials={l.initials} color={l.avatarColor} size="sm" />
                       <div>
                         <p className="font-semibold text-slate-900 hover:text-brand-700">{l.patientName}</p>
-                        <p className="text-xs text-slate-400">{l.department}</p>
+                        <p className="text-xs text-slate-500">{l.department}</p>
                       </div>
                     </Link>
                   </td>
                   <td className="px-5 py-3.5">
                     <p className="font-medium text-slate-800">{l.name}</p>
-                    <p className="text-xs text-slate-400">{l.category}</p>
+                    <p className="text-xs text-slate-500">{l.category}</p>
                   </td>
                   <td className="px-5 py-3.5">
                     <span className={cn(
@@ -165,7 +165,7 @@ export default function LabResults() {
                       (l.flag === "High" || l.flag === "Low") && "text-amber-600",
                       l.flag === "Normal" && "text-slate-800"
                     )}>
-                      {l.value} <span className="text-xs font-normal text-slate-400">{l.unit}</span>
+                      {l.value} <span className="text-xs font-normal text-slate-500">{l.unit}</span>
                     </span>
                   </td>
                   <td className="px-5 py-3.5 text-xs text-slate-500">{l.range}</td>
@@ -180,7 +180,7 @@ export default function LabResults() {
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Normal</span>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-xs text-slate-500"><Clock className="mr-1 inline h-3 w-3" />{l.collected}</td>
+                  <td className="hidden px-5 py-3.5 text-xs text-slate-500 sm:table-cell"><Clock className="mr-1 inline h-3 w-3" />{l.collected}</td>
                 </tr>
               ))}
             </tbody>
