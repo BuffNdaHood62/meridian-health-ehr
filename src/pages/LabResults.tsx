@@ -5,7 +5,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
-import { patients } from "../data/mockData";
+import { loadPatients, useAsync } from "../data/api";
 import { cn } from "../utils/cn";
 
 interface FlatLab {
@@ -29,10 +29,11 @@ const flagFilters = ["All", "Critical", "Abnormal", "Normal"] as const;
 export default function LabResults() {
   const [query, setQuery] = useState("");
   const [flag, setFlag] = useState<string>("All");
+  const { data: patients } = useAsync(loadPatients, []);
 
   const allLabs: FlatLab[] = useMemo(
     () =>
-      patients.flatMap((p) =>
+      (patients ?? []).flatMap((p) =>
         p.labs.map((l) => ({
           patientId: p.id,
           patientName: `${p.firstName} ${p.lastName}`,

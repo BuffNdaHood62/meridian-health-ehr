@@ -8,7 +8,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
-import { patients } from "../data/mockData";
+import { loadPatients, useAsync } from "../data/api";
 import { formatDate } from "../utils/format";
 import { cn } from "../utils/cn";
 
@@ -38,10 +38,11 @@ const allTypes = ["All", "Diagnosis", "Surgery", "Imaging", "Procedure", "Visit"
 export default function MedicalHistory() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All");
+  const { data: patients } = useAsync(loadPatients, []);
 
   const events = useMemo<FlatEvent[]>(
     () =>
-      patients
+      (patients ?? [])
         .flatMap((p) =>
           p.history.map((h) => ({
             patientId: p.id,
@@ -57,7 +58,7 @@ export default function MedicalHistory() {
           }))
         )
         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    []
+    [patients]
   );
 
   const filtered = events.filter((e) => {

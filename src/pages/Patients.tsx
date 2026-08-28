@@ -5,7 +5,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge, AcuityBadge, Badge, type Tone } from "../components/ui/Badge";
-import { patients } from "../data/mockData";
+import { loadPatients, useAsync } from "../data/api";
 import { formatDate, ageFromDob } from "../utils/format";
 import { cn } from "../utils/cn";
 
@@ -14,9 +14,11 @@ const statusFilters = ["All", "ICU", "Admitted", "Observation", "Outpatient", "D
 export default function Patients() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("All");
+  const { data: patients, loading } = useAsync(loadPatients, []);
 
   const filtered = useMemo(() => {
-    return patients.filter((p) => {
+    const list = patients ?? [];
+    return list.filter((p) => {
       const matchesQuery =
         !query.trim() ||
         `${p.firstName} ${p.lastName}`.toLowerCase().includes(query.toLowerCase()) ||
@@ -26,17 +28,19 @@ export default function Patients() {
       const matchesStatus = status === "All" || p.status === status;
       return matchesQuery && matchesStatus;
     });
-  }, [query, status]);
+  }, [query, status, patients]);
 
-  // RFD §4.1: Priority = acuity Critical|Serious (resolves duplicate Outpatient tile)
   const stats = {
-    total: patients.length,
-    scheduled: patients.filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status)).length,
-    priority: patients.filter((p) => p.acuity === "Critical" || p.acuity === "Serious").length,
+    total: patients?.length ?? 0,
+    scheduled: patients?.filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status)).length ?? 0,
+    priority: patients?.filter((p) => p.acuity === "Critical" || p.acuity === "Serious").length ?? 0,
   };
 
   return (
     <div data-testid="patients-page">
+      {loading && (
+        <p className="mb-4 text-sm text-slate-500">Loading patients…</p>
+      )}
       <PageHeader
         title="WWW Clients"
         subtitle="Search and manage all patients in your care network."

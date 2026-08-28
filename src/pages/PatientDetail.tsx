@@ -10,7 +10,7 @@ import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, StatusBadge, AcuityBadge, flagTone, severityTone, type Tone } from "../components/ui/Badge";
 import { TrendChart, Sparkline } from "../components/charts/Charts";
-import { getPatientById } from "../data/mockData";
+import { loadPatient, useAsync } from "../data/api";
 import type { Patient } from "../types";
 import { bmi, bmiCategory, formatDate, formatDateTime, bpTone, hrTone, spo2Tone, tempTone, toneTextClass, ageFromDob } from "../utils/format";
 import { cn } from "../utils/cn";
@@ -21,9 +21,12 @@ type Tab = (typeof tabs)[number];
 
 export default function PatientDetail() {
   const { id } = useParams();
-  const patient = getPatientById(id || "");
+  const { data: patient, loading } = useAsync(() => loadPatient(id || ""), [id]);
   const [tab, setTab] = useState<Tab>("Overview");
 
+  if (loading) {
+    return <div className="flex items-center justify-center py-24 text-sm text-slate-500">Loading patient…</div>;
+  }
   if (!patient) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">

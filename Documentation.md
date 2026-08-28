@@ -4,6 +4,92 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-08-27 — Supabase data layer + per-role RLS (mock-data gap closed)
+
+Closed the demo gap: clinical pages now read through one async data layer
+(`src/data/api.ts`) that returns the **existing domain types** (page render
+code untouched) and swaps mockData → Supabase when `VITE_SUPABASE_*` is set.
+
+- `src/data/api.ts` — `loadPatients/loadPatient/loadMessages/loadOrders/
+  loadAlerts/loadAppointments/saveOrder` + `useAsync` hook. Supabase branch
+  assembles the nested `Patient` shape from `patients` + child tables; mock
+  branch returns `mockData` (zero-backend demo stays seamless).
+- Pages converted: Patients, PatientDetail, Orders (read + `saveOrder` on
+  sign), Messages, LabResults, MedicalHistory, Dashboard, Topbar. Each keeps
+  its exact UI; only the data source became async.
+- `supabase/migrations/0004_role_rls.sql` — `role_can(entity, action)` SECURITY
+  DEFINER fn; reception = patients+messages only, lab = patients+labs+orders+
+  messages, others full. Org boundary (`current_org_id()`) still enforced.
+- `supabase/migrations/0005_alerts_appointments.sql` — `alerts`+`appointments`
+  tables (referenced by the data layer) + seed alert so the critical banner
+  has content. `0004` also added `patients.emergency_contact`/`admit_date`
+  columns so the `Patient` shape maps 1:1.
+- `audit.ts` `appendAudit` routes to `append_audit` RPC when configured
+  (actor captured server-side, can't be spoofed).
+
+Verification: tsc clean · lint 0 errors · vitest 32/32 · `npm run build` ✓.
+
+→ Demo fallback unchanged (no Supabase project needed to run). To go live: set
+`.env` `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`, run migrations, flip
+`DEMO_MODE=false`. Skipped: real PHI seed, per-account RLS locks, Terraform
+(self-host only).
+
+---
+
+## 2026-08-27 — Supabase backend (auth + Postgres + RLS)
+
+Full-stack setup task: real backend for the EHR, dropping into the existing
+`useAuth`/`appendAudit` contract so no page changed its auth calls.
+
+### `supabase/migrations/`
+- `0001_init.sql`: extensions (pgcrypto, pgjwt); `profiles` 1:1 `auth.users`
+  (org tenancy + role); `organizations`; `patients` + clinical children
+  (allergies/medications/labs/vitals/history/notes/orders/messages); `audit_log`
+  (append-only); `shares` (one-time). FKs, indexes, RLS on every table. Helpers
+  `current_org_id()`, `is_admin()`, `handle_new_user` trigger (auto-profile on
+  signup), `append_audit` (SECURITY DEFINER).
+- `0002_rpc.sql`: `redeem_share(token)` (anon EXECUTE, one-time, minimal PHI
+  projection) for `/share/:token`; `verify_profile` (admin).
+- `0003_seed.sql`: demo org + 5 staff (doctor/nurse/reception/admin/lab) + 2
+  patients. Seed password hash is a placeholder — replace before non-local use.
+- `config.toml`: local CLI (email confirmations on, Email OTP on).
+
+### `src/lib/supabase.ts` (new)
+Anon client from `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` +
+`isSupabaseConfigured` guard + `requireSupabase()`.
+
+### `src/auth.tsx` / `src/auth-demo.tsx` / `src/auth-supabase.tsx`
+`auth.tsx` now holds the shared `AuthContext` + `useAuth` + `RequireAuth` +
+`RouteAuthenticationGate` and a selector `AuthProvider` that uses Supabase when
+env is set, else the demo provider. Demo impl moved to `auth-demo.tsx`;
+backend impl in `auth-supabase.tsx` (signInWithPassword / signUp / signOut,
+`currentUser` projected from `profiles`). App.tsx unchanged.
+
+### `src/utils/audit.ts`
+`appendAudit` routes to `append_audit` RPC when configured (captures real actor
+server-side); localStorage fallback for demo.
+
+### `src/vite-env.d.ts` (new)
+Typed `VITE_SUPABASE_*` for strict tsc.
+
+### `.env.example` + `.gitignore`
+Documented anon keys only; `.env` ignored. Bootstrap: `scripts/bootstrap-supabase.mjs`.
+
+### Verification
+lint 0 errors (8 pre-existing react-refresh warnings) · tsc clean · vitest
+32/32 · `npm run build` ✓ (688 kB). Full RLS/seed verification checklist in
+`supabase/README.md`.
+
+### Skipped (deliberate, documented)
+- Real patient data migration from mockData to Supabase (pages still read mock
+  data; only auth + audit are backend-backed this pass).
+- Per-role RLS granularity (org boundary is the floor; role-scoped policies are
+  an extension).
+- Terraform: Supabase is managed; `config.toml` + Studio cover IaC. Add TF only
+  if self-hosting on a VM/container.
+
+---
+
 ## 2026-08-27 — Production-readiness hardening (no backend)
 
 Goal: make the frontend artifact deliverable as a *labeled demo* and impossible

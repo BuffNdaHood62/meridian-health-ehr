@@ -2,8 +2,11 @@
 // Append-only audit log (RFD §8.3)
 // ============================================================================
 
-// ponytail: localStorage array, capped at last 500 entries. Production =
-// server-side immutable table; same record shape.
+// ponytail: localStorage array (capped 500) = demo stand-in. When Supabase is
+// configured, appendAudit routes to the SECURITY DEFINER RPC so the real actor
+// (auth.uid()) is captured and the row is immutable. Same record shape.
+
+import { isSupabaseConfigured, supabase } from "../lib/supabase";
 
 export interface AuditEntry {
   id: string;
@@ -48,6 +51,14 @@ export function appendAudit(
   entityId: string,
   detail?: string
 ): void {
+  // ponytail: backend path captures the real actor server-side via the
+  // SECURITY DEFINER RPC; fire-and-forget (don't block the UI on audit).
+  if (isSupabaseConfigured) {
+    supabase.rpc("append_audit", { p_action: action, p_entity: entity, p_entity_id: entityId, p_detail: detail ?? null })
+      .then(undefined, () => {});
+    return;
+  }
+
   const entry: AuditEntry = {
     id: `aud-${crypto.randomUUID()}`,
     actorId: currentUserRef(),

@@ -8,7 +8,8 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
-import { patients, orders as initialOrders, currentUser } from "../data/mockData";
+import { currentUser } from "../data/mockData";
+import { loadPatients, loadOrders, saveOrder, useAsync } from "../data/api";
 import type { OrderItem, OrderType, AdministrationStatus } from "../types";
 import { runCDS, type DraftOrder } from "../utils/cds";
 import { useDoctorCode, hasDoctorCode } from "../auth-doctor";
@@ -102,16 +103,19 @@ function CodeGate() {
 
 function OrdersInner() {
   const { currentUser: liveUser } = useAuth();
-  const [patientId, setPatientId] = useState(patients[0].id);
+  const { data: patients, loading } = useAsync(loadPatients, []);
+  const [patientId, setPatientId] = useState<string | null>(null);
+  const effectivePatientId = patientId ?? patients?.[0]?.id ?? null;
+  const { data: initialOrders } = useAsync(() => loadOrders(effectivePatientId ?? ""), [effectivePatientId]);
   const [type, setType] = useState<OrderType>("Medication");
   const [selectedName, setSelectedName] = useState("");
   const [detail, setDetail] = useState("");
   const [priority, setPriority] = useState<"Routine" | "STAT" | "Urgent">("Routine");
   const [cart, setCart] = useState<DraftOrder[]>([]);
   // ponytail: copy-on-write over shared module data; replace with reducer if flows grow
-  const [submitted, setSubmitted] = useState<OrderItem[]>([...initialOrders]);
+  const [submitted, setSubmitted] = useState<OrderItem[]>(initialOrders ?? []);
 
-  const patient = patients.find((p) => p.id === patientId);
+  const patient = patients?.find((p) => p.id === effectivePatientId);
 
   // RFD §5 — administration trail keyed by order id
   const [adminByOrder, setAdminByOrder] = useState<Record<string, AdministrationStatus>>(() => {
@@ -129,13 +133,14 @@ function OrdersInner() {
 
   // Single CDS evaluation per cart item, keyed by draft id — reused by rows below
   const cdsByDraft = useMemo(
-    () => new Map(cart.map((d) => [d.id, runCDS(patientId, d)])),
-    [cart, patientId]
+    () => new Map(cart.map((d) => [d.id, runCDS(effectivePatientId ?? "", d)])),
+    [cart, effectivePatientId]
   );
   const cdsResults = useMemo(() => [...cdsByDraft.values()].flat(), [cdsByDraft]);
   const hasBlock = cdsResults.some((r) => r.level === "danger");
 
   // ponytail: unreachable with current mock data; guards future edits instead of `!`
+  if (loading) return <div className="p-8 text-center text-sm text-slate-500">Loading…</div>;
   if (!patient) return null;
 
   const addToCart = () => {
@@ -153,7 +158,7 @@ function OrdersInner() {
     const now = new Date().toISOString();
     const newOrders: OrderItem[] = cart.map((d) => ({
       id: `o-${crypto.randomUUID()}`,
-      patientId,
+      patientId: effectivePatientId ?? "",
       type: d.type,
       name: d.name,
       detail: d.detail,
@@ -163,7 +168,10 @@ function OrdersInner() {
       orderedBy: actor,
     }));
     setSubmitted((s) => [...newOrders, ...s]);
-    for (const o of newOrders) appendAudit("sign", "Order", o.id, o.name);
+    for (const o of newOrders) {
+      appendAudit("sign", "Order", o.id, o.name);
+      saveOrder(o);
+    }
     setAudit(listAudit());
     setCart([]);
   };
@@ -185,7 +193,7 @@ function OrdersInner() {
       <Card className="mb-6 p-4">
         <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ordering for</label>
         <div className="flex flex-wrap gap-2">
-          {patients.filter((p) => p.status !== "Outpatient" && p.status !== "Discharged").map((p) => (
+          {patients?.filter((p) => p.status !== "Outpatient" && p.status !== "Discharged").map((p) => (
             <button
               key={p.id}
               onClick={() => setPatientId(p.id)}
@@ -399,7 +407,7 @@ function OrdersInner() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {submitted.filter((o) => o.patientId === patientId).slice(0, 10).map((o) => {
+                {submitted.filter((o) => o.patientId === effectivePatientId).slice(0, 10).map((o) => {
                   const admin = adminByOrder[o.id] ?? "Pending";
                   return (
                     <tr key={o.id} className="hover:bg-slate-50">

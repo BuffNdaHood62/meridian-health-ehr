@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bell, Menu, Search, Command, Plus } from "lucide-react";
-import { patients, alerts } from "../../data/mockData";
+import { loadPatients, loadAlerts, useAsync } from "../../data/api";
 import { Avatar } from "../ui/Avatar";
 import { AcuityBadge } from "../ui/Badge";
 import { formatTime } from "../../utils/format";
@@ -9,6 +9,8 @@ import { cn } from "../../utils/cn";
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const navigate = useNavigate();
+  const { data: patients } = useAsync(loadPatients, []);
+  const { data: alerts } = useAsync(loadAlerts, []);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -16,8 +18,8 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
 
-  const criticalAlerts = alerts.filter((a) => a.severity === "Critical");
-  const topNotifications = [...alerts]
+  const criticalAlerts = (alerts ?? []).filter((a) => a.severity === "Critical");
+  const topNotifications = [...(alerts ?? [])]
     .sort((a, b) => {
       const rank: Record<string, number> = { Critical: 0, Warning: 1, Info: 2 };
       return (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3);
@@ -25,7 +27,7 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
     .slice(0, 5);
 
   const results = query.trim()
-    ? patients
+    ? (patients ?? [])
         .filter(
           (p) =>
             `${p.firstName} ${p.lastName}`.toLowerCase().includes(query.toLowerCase()) ||

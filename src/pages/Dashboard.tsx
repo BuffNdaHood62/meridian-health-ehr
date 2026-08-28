@@ -7,8 +7,10 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
 import { Card, CardHeader } from "../components/ui/Card";
 import { StatusBadge } from "../components/ui/Badge";
-import { patients, alerts, appointments, departmentStats, currentUser } from "../data/mockData";
+import { departmentStats, currentUser } from "../data/mockData";
+import { loadPatients, loadAlerts, loadAppointments, useAsync } from "../data/api";
 import { useAuth } from "../auth";
+import type { Patient } from "../types";
 import { cn } from "../utils/cn";
 
 const inputCls =
@@ -106,7 +108,7 @@ function DemographicsSlot() {
 }
 
 // RFD §3.2 — Medical Review entry; registered into Medical History on submit
-function MedicalReviewSlot({ onSaved }: { onSaved: (r: MedicalReviewEntry) => void }) {
+function MedicalReviewSlot({ patients, onSaved }: { patients: Patient[]; onSaved: (r: MedicalReviewEntry) => void }) {
   const [clientName, setClientName] = useState("");
   const [diagnosis, setDiagnosis] = useState("");
   const [events, setEvents] = useState("");
@@ -206,9 +208,12 @@ function VitalInput({
 export default function Dashboard() {
   const { currentUser: liveUser } = useAuth();
   const displayName = liveUser?.name ?? currentUser.name;
-  const active = patients.filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status));
-  const criticalAlerts = alerts.filter((a) => a.severity === "Critical");
-  const todayAppts = appointments.filter((a) => a.status !== "Cancelled");
+  const { data: patients } = useAsync(loadPatients, []);
+  const { data: alerts } = useAsync(loadAlerts, []);
+  const { data: appointments } = useAsync(loadAppointments, []);
+  const active = (patients ?? []).filter((p) => ["ICU", "Admitted", "Observation"].includes(p.status));
+  const criticalAlerts = (alerts ?? []).filter((a) => a.severity === "Critical");
+  const todayAppts = (appointments ?? []).filter((a) => a.status !== "Cancelled");
 
   const usedBeds = departmentStats.reduce((s, d) => s + d.census, 0);
 
@@ -269,7 +274,7 @@ export default function Dashboard() {
         <DemographicsSlot />
 
         <div className="space-y-6">
-          <MedicalReviewSlot onSaved={saveReview} />
+          <MedicalReviewSlot patients={patients ?? []} onSaved={saveReview} />
 
           {reviews.length > 0 && (
             <Card>

@@ -7,8 +7,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
-import { messages as initialMessages } from "../data/mockData";
-import type { Message } from "../types";
+import { loadMessages, useAsync } from "../data/api";
 import { formatDateTime } from "../utils/format";
 import { cn } from "../utils/cn";
 
@@ -18,23 +17,25 @@ const categoryIcon: Record<string, React.ElementType> = {
 const priorityTone: Record<string, Tone> = { Urgent: "red", High: "amber", Normal: "slate" };
 
 export default function Messages() {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [activeId, setActiveId] = useState<string>(initialMessages[0].id);
+  const { data: messages, loading } = useAsync(loadMessages, []);
+  const [activeId, setActiveId] = useState<string>(messages?.[0]?.id ?? "");
   const [folder, setFolder] = useState("Inbox");
   const [query, setQuery] = useState("");
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
-  const active = messages.find((m) => m.id === activeId);
+  const viewed = (messages ?? []).map((m) => (readIds.has(m.id) ? { ...m, read: true } : m));
+  const active = viewed.find((m) => m.id === activeId);
 
   const folders = [
-    { label: "Inbox", icon: Inbox, count: messages.length },
-    { label: "Unread", icon: Mail, count: messages.filter((m) => !m.read).length },
-    { label: "Urgent", icon: AlertCircle, count: messages.filter((m) => m.priority === "Urgent").length },
+    { label: "Inbox", icon: Inbox, count: viewed.length },
+    { label: "Unread", icon: Mail, count: viewed.filter((m) => !m.read).length },
+    { label: "Urgent", icon: AlertCircle, count: viewed.filter((m) => m.priority === "Urgent").length },
     { label: "Starred", icon: Star, count: 0 },
     { label: "Sent", icon: Send, count: 0 },
     { label: "Archive", icon: Archive, count: 0 },
   ];
 
-  const list = messages.filter((m) => {
+  const list = viewed.filter((m) => {
     const matchesQuery =
       !query.trim() ||
       m.subject.toLowerCase().includes(query.toLowerCase()) ||
@@ -51,13 +52,14 @@ export default function Messages() {
 
   const openMessage = (id: string) => {
     setActiveId(id);
-    setMessages((ms) => ms.map((m) => (m.id === id ? { ...m, read: true } : m)));
+    setReadIds((s) => new Set(s).add(id));
   };
 
-  const unreadCount = messages.filter((m) => !m.read).length;
+  const unreadCount = viewed.filter((m) => !m.read).length;
 
   return (
     <div data-testid="messages-page">
+      {loading && <p className="mb-4 text-sm text-slate-500">Loading messages…</p>}
       <PageHeader
         title="Secure Messages"
         subtitle="Encrypted clinical communications between care team members."
