@@ -12,10 +12,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Must match the local toolchain (AGENTS.md pins Node 24). Node 20 was
+          # drift: Vite 7 needs >=20.19, so it passed by luck, not by design.
+          node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run lint
       - run: npm run typecheck
+      # --max-warnings=0 makes every warning blocking — that is the point. The
+      # LabResults stale-closure bug (useMemo with [] deps over `patients`) sat
+      # in CI as a *warning* before it was fixed. react-refresh is exempted
+      # because it is HMR-ergonomics only: colocating a context or hook with its
+      # component is a legitimate pattern. Drop the exemption and fix the 8
+      # remaining warnings once contexts live in their own files.
+      - run: npx eslint . --max-warnings=0 --rule '{"react-refresh/only-export-components":"off"}'
       - run: npm test
       - run: npm run build
