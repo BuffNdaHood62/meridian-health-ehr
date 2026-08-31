@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet, useLocation, useNavigate, Link } from "react-router-dom";
+import { Lock } from "lucide-react";
 import { canAccess, type Role, type WWWUser } from "./users";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { DemoAuthProvider } from "./auth-demo";
@@ -47,17 +48,44 @@ export function useAuth(): AuthContextValue {
 export function RequireAuth() {
   const { isAuthenticated, currentUser } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
 
   if (!isAuthenticated || !currentUser) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
   if (!canAccess(currentUser.role, location.pathname)) {
+    // ponytail: this renders outside AppLayout, so there is no sidebar to escape
+    // through — without these actions a denied user is stranded on a dead-end
+    // page. "Go back" returns through history; "dashboard" is the always-safe
+    // fallback for direct hits / empty history.
     return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-center">
-        <h1 className="text-lg font-bold text-slate-900">Not available for your role</h1>
-        <p className="text-sm text-slate-500">
-          Your role ({currentUser.role}) does not have access to this page.
-        </p>
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-500">
+          <Lock className="h-7 w-7" />
+        </div>
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">Not available for your role</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Your role ({currentUser.role}) does not have access to this page.
+          </p>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            data-testid="role-denied-back"
+            className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+          >
+            Go back
+          </button>
+          <Link
+            to="/"
+            data-testid="role-denied-dashboard"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            Go to dashboard
+          </Link>
+        </div>
       </div>
     );
   }
