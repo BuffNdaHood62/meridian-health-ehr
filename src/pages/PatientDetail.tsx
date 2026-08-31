@@ -38,7 +38,11 @@ export default function PatientDetail() {
     );
   }
 
-  const latest = patient.vitals[patient.vitals.length - 1];
+  // ponytail: `vitals` is empty for a patient with no readings yet (new admission,
+  // or Supabase-sourced data). `?? null` keeps the chart renderable instead of
+  // throwing on `latest.bpSys`. Upgrade path: `noUncheckedIndexedAccess` in
+  // tsconfig would make the compiler enforce this everywhere.
+  const latest = patient.vitals[patient.vitals.length - 1] ?? null;
   const p = patient;
 
   return (
@@ -95,10 +99,10 @@ export default function PatientDetail() {
           {/* Latest vitals inline */}
           <div className="grid grid-cols-4 gap-2 lg:gap-3">
             {[
-              { label: "BP", value: `${latest.bpSys}/${latest.bpDia}`, icon: HeartPulse },
-              { label: "HR", value: `${latest.hr}`, icon: Activity },
-              { label: "SpO₂", value: `${latest.spo2}%`, icon: Wind },
-              { label: "Temp", value: `${latest.temp}°`, icon: Thermometer },
+              { label: "BP", value: latest ? `${latest.bpSys}/${latest.bpDia}` : "—", icon: HeartPulse },
+              { label: "HR", value: latest ? `${latest.hr}` : "—", icon: Activity },
+              { label: "SpO₂", value: latest ? `${latest.spo2}%` : "—", icon: Wind },
+              { label: "Temp", value: latest ? `${latest.temp}°` : "—", icon: Thermometer },
             ].map((v) => (
               <div key={v.label} className="rounded-xl bg-slate-50 px-3 py-2 text-center">
                 <v.icon className="mx-auto mb-0.5 h-3.5 w-3.5 text-slate-500" />
@@ -200,17 +204,17 @@ const bmiVal = (p: Patient) => bmi(p.weightKg, p.heightCm);
 
 // ---- Overview tab -----------------------------------------------------------
 function OverviewTab({ p }: { p: Patient }) {
-  const latest = p.vitals[p.vitals.length - 1];
+  const latest = p.vitals[p.vitals.length - 1] ?? null;
   const hrSeries = p.vitals.map((v) => v.hr);
   const problems = p.history.filter((h) => h.type === "Diagnosis" || h.type === "Visit").slice(0, 4);
 
   const vitals = [
-    { label: "Blood Pressure", value: `${latest.bpSys}/${latest.bpDia}`, unit: "mmHg", series: p.vitals.map((v) => v.bpSys), color: "#13726c" },
-    { label: "Heart Rate", value: `${latest.hr}`, unit: "bpm", series: hrSeries, color: "#e11d48" },
-    { label: "Oxygen Sat.", value: `${latest.spo2}`, unit: "%", series: p.vitals.map((v) => v.spo2), color: "#2563eb" },
-    { label: "Temperature", value: `${latest.temp}`, unit: "°F", series: p.vitals.map((v) => v.temp), color: "#ea580c" },
-    { label: "Respiratory", value: `${latest.rr}`, unit: "/min", series: p.vitals.map((v) => v.rr), color: "#7c3aed" },
-    { label: "Pain Score", value: `${latest.pain}`, unit: "/10", series: p.vitals.map((v) => v.pain), color: "#0891b2" },
+    { label: "Blood Pressure", value: latest ? `${latest.bpSys}/${latest.bpDia}` : "—", unit: "mmHg", series: p.vitals.map((v) => v.bpSys), color: "#13726c" },
+    { label: "Heart Rate", value: latest ? `${latest.hr}` : "—", unit: "bpm", series: hrSeries, color: "#e11d48" },
+    { label: "Oxygen Sat.", value: latest ? `${latest.spo2}` : "—", unit: "%", series: p.vitals.map((v) => v.spo2), color: "#2563eb" },
+    { label: "Temperature", value: latest ? `${latest.temp}` : "—", unit: "°F", series: p.vitals.map((v) => v.temp), color: "#ea580c" },
+    { label: "Respiratory", value: latest ? `${latest.rr}` : "—", unit: "/min", series: p.vitals.map((v) => v.rr), color: "#7c3aed" },
+    { label: "Pain Score", value: latest ? `${latest.pain}` : "—", unit: "/10", series: p.vitals.map((v) => v.pain), color: "#0891b2" },
   ];
 
   return (

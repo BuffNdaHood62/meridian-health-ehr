@@ -50,7 +50,7 @@ export default function LabResults() {
           collected: l.collected,
         }))
       ),
-    []
+    [patients]
   );
 
   const filtered = allLabs.filter((l) => {
