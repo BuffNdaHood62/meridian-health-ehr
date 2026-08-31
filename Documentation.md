@@ -4,6 +4,82 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-08-31 — Messages: real Compose + popup reading pane
+
+The Messages screen got two senior-level fixes.
+
+### `src/components/ui/Modal.tsx` (new)
+A single, accessible popup shell so the app stops hand-rolling overlays.
+Handles Escape-to-close, click-outside, body scroll-lock, focus-on-open +
+restore, and a lightweight Tab focus-trap. Same visual metrics as the
+existing `ShareActions` popup (`bg-slate-900/40 backdrop-blur-sm` overlay,
+`rounded-2xl bg-white shadow-xl`, brand-600 actions). `ShareActions` still
+uses its own inline copy — candidate to refactor onto this primitive later.
+
+### `src/pages/Messages.tsx`
+1. **Compose** — the header "Compose" button now opens a real compose popup
+   (To w/ care-team autocomplete, Category, Priority, Subject, Body). Validation
+   requires To + Subject + Body; on send it prepends a `sent: true` message and
+   jumps to the Sent folder. Reply reuses compose prefilled (`Re:` subject).
+2. **Reading as popup** — clicking a message opens it in a centered `Modal`
+   instead of the old side-by-side reading pane. Removes the `md:grid-cols-2`
+   split that broke the mobile layout; the list now spans its column.
+
+### `src/types.ts`
+`Message` gained optional `sent?: boolean` and `to?: string` to model composed
+messages and drive the Sent folder honestly (no faked inbox rows).
+
+### `src/pages/AGENTS.md`
+Messages line updated: compose is a modal, reading is a popup.
+
+---
+
+## 2026-08-31 — Go-back button on the role-denied page
+
+`src/auth.tsx` — `RequireAuth` rendered the "Not available for your role" block
+**outside `AppLayout`**, so a denied user had no sidebar and no way off the page.
+Added a "Go back" button (`navigate(-1)`) and a "Go to dashboard" fallback (`/`)
+— `data-testid="role-denied-back"` / `role-denied-dashboard`. The dashboard link is
+the always-safe path for direct hits / empty history where `back` would no-op.
+Imported `useNavigate` + `Link` (react-router-dom) and `Lock` (lucide-react).
+
+---
+
+## 2026-08-31 — Demo role picker moved to its own `/demo` page
+
+The five demo accounts no longer live inline on the login screen. The
+"Enter Demo Workspace" button now routes to a dedicated picker.
+
+### `src/pages/DemoPicker.tsx` (new)
+Full-page role picker: one card per account with avatar, role badge, a
+one-line purpose, and the access list **derived from `ROLE_ROUTES`** so the
+copy can never drift from the `canAccess` rule that actually gates nav.
+Selecting a card and pressing "Enter workspace" calls the same
+`login(userId)` → `startSession(user)` path the inline picker used.
+
+### `src/pages/Login.tsx`
+Removed the `USERS` radio list, the `selectedUser` state, and `doDemoLogin`.
+The button is now `navigate("/demo", { state: { from } })`, so the
+post-login destination survives the extra hop. Email/password sign-in and all
+`login-*` testids are unchanged.
+
+### `src/App.tsx`
+Added `<Route path="/demo" element={<DemoPicker />} />` — public, outside
+`RequireAuth`, alongside `/login` and `/signup`.
+
+### Decisions
+- **Pre-selects the first account**, matching the old inline picker, so
+  entering the demo is still effectively one click for the common case.
+- **Access list is derived, not hardcoded** — a second copy of the permission
+  rules would drift.
+- **Backend mode shows an amber notice.** `auth-supabase.tsx` returns
+  "Use email sign-in in backend mode." for `login()`; surfacing that up front
+  avoids a dead-end click. The error still renders if clicked anyway.
+- Role colours/blurbs stay in `DemoPicker.tsx` (marked `ponytail:`) — they are
+  presentational, not domain data, so `users.ts` is untouched.
+
+---
+
 ## 2026-08-27 — Supabase data layer + per-role RLS (mock-data gap closed)
 
 Closed the demo gap: clinical pages now read through one async data layer
