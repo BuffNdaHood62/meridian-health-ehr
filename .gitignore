@@ -24,3 +24,6 @@ npm-debug.log*
 # Supabase local CLI artifacts
 supabase/.temp/
 supabase/db/*.sql
+
+# Agent-local state (memory, sessions) — never committed
+.workbuddy-ai/
