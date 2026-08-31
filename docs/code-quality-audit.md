@@ -347,6 +347,38 @@ could actually review.
 
 ---
 
+### 🟠 P1-7 — The `react-refresh` warning is a real dev-tax, not a lint nit
+
+**File:** `src/auth.tsx:28`
+
+I initially wrote this warning off as cosmetic and exempted it from CI. The Vite dev log
+proves otherwise:
+
+```
+hmr invalidate /src/auth.tsx  Could not Fast Refresh
+  ("AuthContext" export is incompatible)
+hmr update /src/App.tsx, /src/pages/Signup.tsx, /src/pages/Settings.tsx,
+  /src/pages/Login.tsx, /src/pages/Dashboard.tsx, /src/pages/DemoPicker.tsx,
+  /src/pages/Orders.tsx, /src/auth-supabase.tsx, /src/auth-demo.tsx,
+  /src/components/layout/Sidebar.tsx
+```
+
+Because `auth.tsx` exports a non-component (`AuthContext`) alongside components, **every
+save to that file disables Fast Refresh and forces a full reload across ~10 modules** —
+you lose component state on every edit. `auth.tsx` is also the file you touch most when
+working on auth, which is exactly when you want hot reload working.
+
+**Fix (30 min):** move `AuthContext` into `src/auth-context.ts`; update the 3 importers
+(`auth.tsx`, `auth-demo.tsx`, `auth-supabase.tsx`). The other 7 warnings — helper functions
+exported next to components in `Badge.tsx` and `auth-doctor.tsx` — are genuinely cosmetic,
+but fix them in the same pass and drop the CI exemption entirely.
+
+**Why this matters beyond ergonomics:** a warning that is *known to be ignorable* trains the
+team to skim warnings. That habit is how P0-1 survived. Zero warnings is a better default
+than "warnings we've agreed to tolerate."
+
+---
+
 ## The three leverage moves
 
 If you only do three things, do these. They're ordered by *bugs prevented per hour invested*.
@@ -376,7 +408,7 @@ found that bug for free, and a permissive gate let it ship anyway.
 | P2 | `useAsync` dev-time deps-length guard | P1-6 | 30 m | ⬜ |
 | P2 | `canAccess` role×route matrix tests | P0-3 | 1 h | ⬜ |
 | P2 | Page render smoke tests (jsdom + RTL) | P0-3 | 3 h | ⬜ |
-| P2 | Split contexts out of `auth*.tsx` / `Badge.tsx`; drop the CI rule exemption | — | 2 h | ⬜ |
+| P1 | Move `AuthContext` to `src/auth-context.ts`; drop the CI rule exemption | see below | 30 m | ⬜ |
 | P3 | Tighten ESLint beyond `recommended` | — | 1 h | ⬜ |
 | P3 | Coverage floor in CI (needs `@vitest/coverage-v8`) | — | 30 m | ⬜ |
 
@@ -397,8 +429,8 @@ found that bug for free, and a permissive gate let it ship anyway.
 - ✅ `npx tsc --noEmit -p .` — clean (exit 0)
 - ✅ `npx vitest run` — 4 files, 32 tests, all passing
 - ✅ `npx eslint . --max-warnings=0 --rule '{"react-refresh/only-export-components":"off"}'` — clean (exit 0)
-- ✅ `npx vite build` — 1,903 modules, `dist/index.html` 693.68 kB (gzip 194.25 kB), 13.9s
-- ✅ P0-1 and P0-4 fixed and verified
+- ✅ `npx vite build` — `dist/index.html` 697.91 kB (gzip 195.46 kB), 13.2s
+- ✅ P0-1, P0-4 fixed and verified; role-denied go-back added (P1-7 evidence)
 
 All four checks pass. Repo-wide `npm run lint` / `npm run typecheck` are documented as
 timeout-prone in this environment; all completed cleanly in this run. Note that

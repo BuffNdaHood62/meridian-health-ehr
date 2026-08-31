@@ -71,6 +71,15 @@ Two things changed, and both matter:
    shipped and broke a whole page. `react-refresh/only-export-components` is exempted because
    it's HMR-ergonomics only (colocating a context with its component is a valid pattern);
    the 8 remaining warnings are all that rule. **Fix them and remove the exemption.**
+
+   > **Correction — that exemption is not as harmless as it sounds.** Vite's dev log shows
+   > the real cost of the `AuthContext` export in `auth.tsx`:
+   > `hmr invalidate /src/auth.tsx Could not Fast Refresh ("AuthContext" export is
+   > incompatible)`, which then re-renders `App.tsx`, all 8 pages, and the sidebar. So every
+   > edit to `auth.tsx` throws away Fast Refresh and forces a full reload across ~10 modules.
+   > Colocating a context with its component is a valid *pattern*; it is not free. Move
+   > `AuthContext` into `src/auth-context.ts` (a one-line import change at its 3 consumers)
+   > and both the warning and the reload tax disappear.
 2. **Node 20 → 24** — CI now matches the toolchain pinned in `AGENTS.md`. It passed on 20 by
    luck (Vite 7 needs ≥20.19); version drift between CI and local is how you get "works on
    my machine" CI failures.
