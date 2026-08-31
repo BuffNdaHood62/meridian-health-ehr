@@ -14,7 +14,7 @@ One file per route in `src/App.tsx`. Each screen renders entirely from `src/data
 - `Orders.tsx` (**WWW Orders**) — order entry calls `runCDS()` from `src/utils/cds.ts` before allowing submit; danger-level findings block the order. Whole page gated behind `<CodeGate />` (doctor-code, `auth-doctor.tsx`). Order History is a side tab: Signed-by column + per-order Administered cell; persists + audits. Single `cdsByDraft` memo feeds both the block flag and row styling — do not call `runCDS` twice.
 - `LabResults.tsx` — table; "Collected" column hidden on phones.
 - `MedicalHistory.tsx` — history timeline; Phase 2 target for encrypted records.
-- `Messages.tsx` — folder counts derived from message read state; keep empty states rendered. Times via `formatDateTime`.
+- `Messages.tsx` — folder counts derived from message read state; keep empty states rendered. Times via `formatDateTime`. Compose is a modal (`Modal.tsx`); reading a message opens a centered popup (replaces the old side-by-side pane) so mobile stays single-column. Composed messages are `sent: true` and land in the Sent folder.
 - `Login.tsx` — role-tagged user picker (radio list, 44px rows); calls `useAuth().login()`. No password check (demo).
 - `Settings.tsx` — session/account view.
 - `ShareView.tsx` — public route `/share/:token`; one-time token → read-only record sheet; invalid/expired/consumed → "Link unavailable".

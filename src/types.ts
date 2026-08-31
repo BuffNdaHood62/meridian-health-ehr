@@ -132,6 +132,10 @@ export interface Message {
   read: boolean;
   priority: "Normal" | "High" | "Urgent";
   category: "Patient" | "Lab" | "Referral" | "System" | "Staff";
+  /** Composed in-app (vs. received). Drives the Sent folder. */
+  sent?: boolean;
+  /** Recipient — only set on composed (sent) messages. */
+  to?: string;
 }
 
 export type OrderType = "Medication" | "Laboratory" | "Imaging" | "Referral" | "Nursing";
