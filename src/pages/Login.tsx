@@ -2,29 +2,17 @@ import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { ShieldCheck, Activity, HeartPulse, Fingerprint, Lock } from "lucide-react";
 import { useAuth } from "../auth";
-import { USERS } from "../users";
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, loginWithEmail } = useAuth();
+  const { loginWithEmail } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [selectedUser, setSelectedUser] = useState(USERS[0].id);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/";
-
-  const doDemoLogin = () => {
-    setError("");
-    const err = login(selectedUser);
-    if (err) {
-      setError(err);
-      return;
-    }
-    navigate(from, { replace: true });
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,43 +143,15 @@ export default function Login() {
 
           <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
             <span className="h-px flex-1 bg-slate-200" />
-            or use a demo account
+            or explore with sample data
             <span className="h-px flex-1 bg-slate-200" />
           </div>
 
-          <div className="space-y-1.5" data-testid="login-users">
-            {USERS.map((u) => (
-              <label
-                key={u.id}
-                className={
-                  "flex min-h-[44px] cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm transition-colors " +
-                  (selectedUser === u.id
-                    ? "border-brand-300 bg-brand-50 ring-2 ring-brand-100"
-                    : "border-slate-200 bg-white hover:bg-slate-50")
-                }
-              >
-                <span className="flex items-center gap-2.5">
-                  <input
-                    type="radio"
-                    name="www-user"
-                    value={u.id}
-                    checked={selectedUser === u.id}
-                    onChange={() => setSelectedUser(u.id)}
-                    className="h-4 w-4 accent-[#13726c]"
-                  />
-                  <span className="font-medium text-slate-800">{u.name}</span>
-                </span>
-                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {u.role}
-                </span>
-              </label>
-            ))}
-          </div>
           <button
             type="button"
-            onClick={doDemoLogin}
+            onClick={() => navigate("/demo", { state: { from } })}
             data-testid="login-demo"
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             <Fingerprint className="h-4 w-4 text-brand-600" /> Enter Demo Workspace
           </button>

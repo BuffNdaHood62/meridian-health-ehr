@@ -5,6 +5,7 @@ import { DoctorCodeProvider } from "./auth-doctor";
 import { AppLayout } from "./components/layout/AppLayout";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import DemoPicker from "./pages/DemoPicker";
 import Dashboard from "./pages/Dashboard";
 import Patients from "./pages/Patients";
 import PatientDetail from "./pages/PatientDetail";
@@ -33,6 +34,8 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
+          {/* Demo role picker — public, outside the auth gate, like /login. */}
+          <Route path="/demo" element={<DemoPicker />} />
           <Route element={<RequireAuth />}>
             <Route element={<RouteAuthenticationGate />}>
             <Route element={<AppLayout />}>
