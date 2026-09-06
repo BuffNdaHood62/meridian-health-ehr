@@ -91,38 +91,48 @@ function assemblePatient(p: PatientRow, children: ChildRow[]): Patient {
   } as Patient;
 }
 
+// Fetch the six clinical child tables, optionally scoped to one patient.
+// Each row is tagged with its table name so assemblePatient can bucket them.
+async function fetchChildRows(patientId?: string): Promise<ChildRow[]> {
+  const tables = ["allergies", "medications", "labs", "vitals", "history", "notes"] as const;
+  const buckets = await Promise.all(
+    tables.map(async (t) => {
+      const base = supabase.from(t).select("*");
+      const { data } = await (patientId ? base.eq("patient_id", patientId) : base);
+      return (data ?? []).map((r) => ({ ...r, table: t }));
+    })
+  );
+  return buckets.flat() as ChildRow[];
+}
+
 export async function loadPatients(): Promise<Patient[]> {
   if (!isSupabaseConfigured) return mockPatients;
   const { data: ps } = await supabase.from("patients").select("*");
-  const [al, med, lab, vit, hist, notes] = await Promise.all([
-    supabase.from("allergies").select("*"),
-    supabase.from("medications").select("*"),
-    supabase.from("labs").select("*"),
-    supabase.from("vitals").select("*"),
-    supabase.from("history").select("*"),
-    supabase.from("notes").select("*"),
-  ]);
-  const children = [...(al.data ?? []).map((r) => ({ ...r, table: "allergies" })),
-    ...(med.data ?? []).map((r) => ({ ...r, table: "medications" })),
-    ...(lab.data ?? []).map((r) => ({ ...r, table: "labs" })),
-    ...(vit.data ?? []).map((r) => ({ ...r, table: "vitals" })),
-    ...(hist.data ?? []).map((r) => ({ ...r, table: "history" })),
-    ...(notes.data ?? []).map((r) => ({ ...r, table: "notes" }))];
+  const children = await fetchChildRows();
   return (ps ?? []).map((p) => assemblePatient(p, children.filter((c) => c.patient_id === p.id)));
 }
 
+// Single-patient fetch: queries scoped by id instead of load-all-then-filter.
 export async function loadPatient(id: string): Promise<Patient | null> {
-  const all = await loadPatients();
-  return all.find((p) => p.id === id) ?? null;
+  if (!isSupabaseConfigured) return mockPatients.find((p) => p.id === id) ?? null;
+  const { data: p } = await supabase.from("patients").select("*").eq("id", id).maybeSingle();
+  if (!p) return null;
+  const children = await fetchChildRows(id);
+  return assemblePatient(p, children);
 }
 
 export async function loadMessages(): Promise<Message[]> {
   if (!isSupabaseConfigured) return mockMessages;
-  const { data } = await supabase.from("messages").select("*").order("created_at", { ascending: false });
+  // sender embed: from_profile -> profiles.full_name gives a displayable name.
+  const { data } = await supabase
+    .from("messages")
+    .select("*, sender:profiles(full_name)")
+    .order("created_at", { ascending: false });
   return (data ?? []).map((m) => ({
     id: m.id,
-    from: m.from_profile ?? m.from_role ?? "System",
+    from: m.sender?.full_name ?? m.from_role ?? "System",
     fromRole: m.from_role ?? "System",
+    to: m.recipient ?? undefined,
     subject: m.subject,
     preview: (m.body ?? "").slice(0, 80),
     body: m.body ?? "",
@@ -130,7 +140,36 @@ export async function loadMessages(): Promise<Message[]> {
     read: m.read ?? false,
     priority: m.priority ?? "Normal",
     category: m.category ?? "Staff",
+    sent: m.sent ?? false,
   })) as Message[];
+}
+
+// Persist a composed message. Returns "" on success or an error message.
+// Demo mode returns "" without writing (caller keeps its in-memory prepend).
+export async function sendMessage(msg: Message): Promise<string> {
+  if (!isSupabaseConfigured) return "";
+  const user = (await supabase.auth.getUser()).data.user;
+  if (!user) return "Not signed in.";
+  // messages.org_id is NOT NULL and RLS with-check compares it to the sender's
+  // org — resolve it from the caller's profile before inserting.
+  const { data: prof, error: profErr } = await supabase
+    .from("profiles")
+    .select("org_id")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (profErr || !prof?.org_id) return profErr?.message ?? "No organization on profile.";
+  const { error } = await supabase.from("messages").insert({
+    org_id: prof.org_id,
+    subject: msg.subject,
+    body: msg.body,
+    from_profile: user.id,
+    from_role: msg.fromRole,
+    priority: msg.priority,
+    category: msg.category,
+    recipient: msg.to ?? null,
+    sent: true,
+  });
+  return error?.message ?? "";
 }
 
 export async function loadOrders(patientId: string): Promise<OrderItem[]> {

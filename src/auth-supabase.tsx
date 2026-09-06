@@ -15,10 +15,14 @@ async function profileToUser(session: Session | null): Promise<WWWUser | null> {
   if (!session?.user) return null;
   const { data } = await supabase
     .from("profiles")
-    .select("id, full_name, role")
+    .select("id, full_name, role, verified")
     .eq("id", session.user.id)
     .maybeSingle();
   if (!data) return null;
+  // Verified gate: unapproved accounts (signup before admin verify_profile, or
+  // a revoked profile) get no user projection — RequireAuth bounces to /login.
+  // loginWithEmail surfaces the explicit "pending verification" message.
+  if (!data.verified) return null;
   const name = data.full_name as string;
   return {
     id: data.id as string,
@@ -54,8 +58,20 @@ export function SupabaseAuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithEmail = useCallback(async (email: string, password: string) => {
     const c = requireSupabase();
-    const { error } = await c.auth.signInWithPassword({ email: email.trim(), password });
-    return error?.message ?? "";
+    const { data, error } = await c.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return error.message;
+    // Verified gate: credentials valid but profile not admin-approved yet —
+    // sign out immediately and explain, instead of a silent bounce to /login.
+    const { data: prof } = await c
+      .from("profiles")
+      .select("verified")
+      .eq("id", data.user.id)
+      .maybeSingle();
+    if (prof && !prof.verified) {
+      await c.auth.signOut();
+      return "Account pending verification. An administrator must approve your account before you can sign in.";
+    }
+    return "";
   }, []);
 
   const signup = useCallback(

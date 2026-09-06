@@ -8,7 +8,7 @@ import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
-import { loadMessages, useAsync } from "../data/api";
+import { loadMessages, sendMessage, useAsync } from "../data/api";
 import type { Message } from "../types";
 import { formatDateTime } from "../utils/format";
 import { cn } from "../utils/cn";
@@ -43,6 +43,8 @@ export default function Messages() {
   const [query, setQuery] = useState("");
 
   const [sent, setSent] = useState<Message[]>([]);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [viewing, setViewing] = useState<Message | null>(null);
   const [composeOpen, setComposeOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -106,9 +108,10 @@ export default function Messages() {
     setComposeOpen(false);
     setDraft(emptyDraft);
     setErrors({});
+    setSendError("");
   };
 
-  const send = () => {
+  const send = async () => {
     const next: Partial<Record<keyof Draft, string>> = {};
     if (!draft.to.trim()) next.to = "Add at least one recipient.";
     if (!draft.subject.trim()) next.subject = "Subject is required.";
@@ -131,6 +134,14 @@ export default function Messages() {
       category: draft.category,
       sent: true,
     };
+    setSending(true);
+    setSendError("");
+    const err = await sendMessage(msg);
+    setSending(false);
+    if (err) {
+      setSendError(`Could not send: ${err}`);
+      return;
+    }
     setSent((s) => [msg, ...s]);
     setFolder("Sent");
     closeCompose();
@@ -398,6 +409,11 @@ export default function Messages() {
           </div>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
+          {sendError && (
+            <p role="alert" data-testid="compose-send-error" className="mr-auto text-xs font-medium text-rose-600">
+              {sendError}
+            </p>
+          )}
           <button
             onClick={closeCompose}
             className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
@@ -406,10 +422,11 @@ export default function Messages() {
           </button>
           <button
             onClick={send}
+            disabled={sending}
             data-testid="compose-send"
-            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Send className="h-4 w-4" /> Send
+            <Send className="h-4 w-4" /> {sending ? "Sending…" : "Send"}
           </button>
         </div>
       </Modal>

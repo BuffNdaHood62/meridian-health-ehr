@@ -4,6 +4,100 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-09-07 — Supabase cloud provisioned (project zdtaludwhxnjutosrnvi)
+
+End-to-end go-live wiring against the live project, `DEMO_MODE` still `true`.
+
+### What happened
+- `supabase link` + `db push`: all 6 migrations applied to the cloud project.
+- `.env` created (gitignored) with `VITE_SUPABASE_URL` + anon key. With env
+  present, `AuthProvider` auto-selects `SupabaseAuthProvider` — the demo
+  provider remains the fallback when env is absent.
+- Full live checklist green: all 5 seed logins, org-scoped `patients` RLS,
+  `audit_log` direct insert denied (RPC-only), message compose round-trip
+  (insert → readback with sender name embed → cleanup), `redeem_share('bogus')`
+  throws `INVALID_SHARE`.
+
+### Two real bugs found & fixed during provisioning
+1. **Seed auth rows unusable on hosted GoTrue** — first push died on
+   `auth.identities.provider_id` NOT NULL (newer cloud auth schema; older local
+   CLI schemas don't have it). After fixing that, login still failed with
+   "Database error querying schema" for seeded users while GoTrue-native users
+   worked. Bisection (wrong-pw vs no-user error paths, then column diffs vs a
+   probe user) isolated it: **`confirmation_token` NULL breaks hosted GoTrue's
+   found-user query** — it must be `''`. `0003_seed.sql` now inserts
+   `provider_id`, normalizes token columns to `''`, and writes GoTrue-convention
+   `raw_app_meta_data`/`raw_user_meta_data` (sub/email). Remote rows fixed
+   in place; probe user deleted.
+2. **`sendMessage` missing `org_id`** — `messages.org_id` is NOT NULL and the
+   RLS `with check` compares it to the sender's org, so the insert must resolve
+   `org_id` from the caller's profile first. `src/data/api.ts` does that now
+   (and returns structured error strings instead of throwing blind).
+
+### Also
+- `supabase/README.md` pitfalls extended with the GoTrue NULL-token and
+  provider_id gotchas.
+- Verification: `npm run test` 32/32, `tsc --noEmit` green, `npx eslint` on
+  changed files clean.
+
+---
+
+## 2026-09-06 — Supabase production-readiness pass
+
+"Make Supabase concrete" work: closed the remaining backend gaps while keeping
+`DEMO_MODE = true` and the demo fallback fully intact. `config.ts` flip is the
+only remaining step before go-live once the cloud project is validated.
+
+### `supabase/migrations/0006_messages_sent.sql` (new)
+`messages` gains `recipient text` + `sent boolean default false` so composed
+messages persist. RLS unchanged — `messages_org` already scopes every row.
+
+### `src/data/api.ts`
+1. **`sendMessage(msg)`** — inserts into `messages` (`from_profile` from
+   `auth.getUser()`, `recipient`, `sent: true`). Returns the error message so
+   callers can surface it. Demo mode: no-op (caller keeps in-memory prepend).
+2. **`loadMessages`** now maps `sent`/`to` and embeds
+   `sender:profiles(full_name)` — previously `from` rendered the raw
+   `from_profile` **uuid** in backend mode. Fixed as part of making compose
+   real.
+3. **`loadPatient(id)`** — queries one patient + child tables scoped by
+   `patient_id` instead of load-all-then-filter. Shared `fetchChildRows`
+   helper (tags each row with its table name for `assemblePatient` bucketing)
+   replaces the duplicated six-table fan-out in `loadPatients`.
+
+### `src/pages/Messages.tsx`
+`send()` is async: awaits `sendMessage`, shows a `compose-send-error` alert in
+the compose popup on failure, disables Send ("Sending…") while in flight, and
+only prepends locally + jumps to Sent after the row persists. Demo mode is
+unchanged (instant local send).
+
+### `src/auth-supabase.tsx` — verified gate
+`profileToUser` selects `verified` and returns `null` for unverified profiles
+(RequireAuth bounces to /login — server-side RLS remains the real guard).
+`loginWithEmail` additionally checks the profile after a successful password
+sign-in: if `verified=false` it signs out and returns "Account pending
+verification…" instead of a silent redirect loop. Production flow: signup →
+confirm email → admin runs `verify_profile(uuid)` → sign-in.
+
+### `supabase/migrations/0003_seed.sql`
+- Placeholder password hash replaced with a **real bcrypt hash** of the
+  documented demo credential `DemoPassw0rd!` (bcryptjs `$2b$` cost 10 — GoTrue
+  accepts `$2a$`/`$2b$`). Safe to commit only because it is a documented demo
+  credential; rotate before any real deployment.
+- Seed staff are set `verified = true` post-insert, otherwise the new gate
+  locks every seed account out of a fresh project.
+
+### `supabase/README.md`
+Verification checklist: 6 migrations, compose-persists check, verified-gate
+flow; pitfall note updated for the real hash.
+
+### Verification
+`npm run test` 32/32; targeted `npx eslint` on the three changed TS files
+(only the pre-existing `react-refresh` warning, disabled in CI); repo-wide
+`tsc --noEmit` + `npm run build` green (single-file dist, 704.55 kB).
+
+---
+
 ## 2026-08-31 — Messages: real Compose + popup reading pane
 
 The Messages screen got two senior-level fixes.

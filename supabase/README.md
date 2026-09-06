@@ -72,20 +72,34 @@ Email OTP in Studio and call `supabase.auth.signInWithOtp({ email })`.
 ## Verification checklist
 
 - [ ] `npm run build` green (typecheck gates it).
-- [ ] `npx supabase db reset` applies all 3 migrations with no errors.
-- [ ] Sign up a user → confirm email → profile row exists, `verified=false`.
+- [ ] `npx supabase db reset` applies all 6 migrations with no errors.
+- [ ] Compose a message in /messages → row lands in `messages` with `sent=true`; reload shows it under Sent.
+- Sign up a user → confirm email → profile row exists, `verified=false` → sign-in
+  is rejected with "Account pending verification" until an admin runs
+  `select verify_profile('<user-id>')` (or flips `verified` in Studio).
+  The 5 seeded staff accounts are pre-verified by `0003_seed.sql`.
 - [ ] As that user, `select * from patients` returns ONLY your org's rows.
 - [ ] `insert into audit_log` as anon client → permission denied (RPC only).
 - [ ] `redeem_share('bogus')` → throws; valid token returns minimal JSON, 2nd call → ALREADY_CONSUMED.
 
 ## Common pitfalls
 
-- Putting the **service_role** key in `VITE_*` — never; anon key only.
-- Forgetting email confirmation → profiles stay `verified=false`; gate UI on it.
+- Putting the **service_role** key in `VITE_` — never; anon key only.
+- **Seeded auth.users must not have NULL token columns.** Hosted GoTrue's login
+  query fails with "Database error querying schema" for any found user whose
+  `confirmation_token` is NULL (it must be `''`). `0003_seed.sql` normalizes
+  token columns + `raw_app_meta_data` on every seeded row; keep that when
+  editing the seed.
+- `auth.identities.provider_id` is NOT NULL on hosted projects — set it to the
+  user id (the identity's `sub`).
+- `messages.org_id` is NOT NULL and RLS `with check` compares it to the
+  sender's org — client inserts must resolve `org_id` from the caller's profile
+  first (`sendMessage` in `src/data/api.ts` does).
 - RLS subqueries: PG forbids `JOIN` in a policy `USING`; we key child tables off
   `(select org_id from patients …)` instead.
-- Seed password hash is a placeholder — generate a real bcrypt hash for
-  `DemoPassw0rd!` before any non-local use, or create users via the Dashboard.
+- Seed password hash is a real bcrypt hash of the documented demo credential
+  `DemoPassw0rd!` (safe to commit for a demo — but never reuse these accounts
+  for real data, and rotate/disable them before any non-demo deployment).
 - Client `audit_log` writes MUST go through the RPC, not `.insert()` — RLS blocks
   direct inserts by design.
 
