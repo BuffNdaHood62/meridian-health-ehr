@@ -4,6 +4,52 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-09-07 — Motion polish pass (8 animation plans executed)
+
+Full improve-animations audit + execution. All motion remains GPU-only
+(transform/opacity/color), durations within budget, and reduced motion now
+honored. Plans + execution notes live in `plans/README.md`.
+
+### `src/index.css`
+1. **Reduced-motion block** (HIGH): under `prefers-reduced-motion: reduce`,
+   `.animate-fade-in` becomes opacity-only (`fade-in-soft`), all transitions
+   snap (`transition-duration: 0.01ms`), while opacity/color transitions stay
+   eased. Movement is dropped, feedback is not.
+2. **Route fade 0.35s → 0.2s** — the app's most frequent motion was over the
+   300ms UI budget.
+3. **Dead `pulse-ring` keyframes deleted** — zero usages in `src/`.
+4. **`--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1)` token added** for the
+   mobile drawer.
+5. **Hover gating**: `@custom-variant hover` restricted to
+   `@media (hover: hover)` — kills sticky hover on touch. Gotcha: the one-line
+   custom-variant form makes lightningcss emit malformed CSS warnings in the
+   build; the `@slot` block form is required.
+
+### Components
+- **Modal** (`src/components/ui/Modal.tsx`): fast 150ms exit fade (opacity +
+  2% scale) behind a `closing` state with a ref guard (Escape-spam safe) and
+  `useCallback(requestClose)`; all close paths (X, backdrop, Escape) routed
+  through it. Entry stays the 200ms `animate-fade-in` — deliberate open, snappy
+  close.
+- **ProgressRing** (`src/components/charts/Charts.tsx`): the stroke-dashoffset
+  "draw-in" transition never fired (offset was final on first render). Now
+  starts from an empty ring and settles on the next frame over 600ms with
+  `cubic-bezier(0.23, 1, 0.32, 1)`; reduced motion renders final value
+  immediately.
+- **Sidebar drawer**: panel `duration-300` + `--ease-drawer`; backdrop
+  `duration-200 ease-out` — iOS-like sheet feel instead of the Tailwind
+  default ease-in-out.
+- **DemoPicker** cards: `transition-all` → `transition-colors` (unbounded →
+  color-only, matches the rest of the app).
+
+### Verification
+`npm run test` 32/32; `tsc --noEmit` + `npm run build` clean (the earlier
+38 CSS warnings were the custom-variant syntax, fixed); eslint on changed
+files clean. Reduced-motion and hover-gating confirmed present in `dist/`
+output CSS.
+
+---
+
 ## 2026-09-07 — Supabase cloud provisioned (project zdtaludwhxnjutosrnvi)
 
 End-to-end go-live wiring against the live project, `DEMO_MODE` still `true`.

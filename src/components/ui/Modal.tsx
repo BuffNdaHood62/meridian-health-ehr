@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "../../utils/cn";
 
@@ -38,6 +38,25 @@ export function Modal({
   className?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Fast exit fade: 150ms opacity/scale transition before unmount. The ref
+  // guard makes Escape/backdrop/X spam safe (single close) even though the
+  // keydown effect captures a stale `closing` state.
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    closeTimer.current = window.setTimeout(() => {
+      closingRef.current = false;
+      setClosing(false);
+      onClose();
+    }, 150);
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -50,7 +69,7 @@ export function Modal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        requestClose();
         return;
       }
       if (e.key !== "Tab") return;
@@ -73,14 +92,17 @@ export function Modal({
       document.body.style.overflow = prevOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm transition-opacity duration-150 ease-out",
+        closing ? "opacity-0" : "opacity-100"
+      )}
+      onClick={requestClose}
     >
       <div
         ref={dialogRef}
@@ -91,6 +113,8 @@ export function Modal({
         onClick={(e) => e.stopPropagation()}
         className={cn(
           "flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-xl outline-none animate-fade-in",
+          "transition-[opacity,transform] duration-150 ease-out",
+          closing ? "scale-[0.98] opacity-0" : "scale-100 opacity-100",
           sizeClass[size],
           className
         )}
@@ -101,7 +125,7 @@ export function Modal({
             {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             aria-label="Close"
             className="tappable rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
           >

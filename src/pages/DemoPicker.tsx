@@ -114,7 +114,7 @@ export default function DemoPicker() {
                   key={u.id}
                   data-testid={`demo-user-${u.id}`}
                   className={cn(
-                    "animate-fade-in flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-all duration-200",
+                    "animate-fade-in flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors duration-200",
                     isSelected
                       ? "border-brand-300 bg-brand-50 ring-2 ring-brand-100"
                       : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"

@@ -36,7 +36,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
       {/* Mobile overlay */}
       <div
         className={cn(
-          "fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm transition-opacity lg:hidden",
+          "fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-sm transition-opacity duration-200 ease-out lg:hidden",
           mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
@@ -45,7 +45,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-slate-200 bg-white transition-transform duration-300 ease-[var(--ease-drawer)] lg:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
         data-testid="sidebar"

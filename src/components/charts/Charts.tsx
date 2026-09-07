@@ -254,6 +254,18 @@ export function RadialGauge({
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const offset = c - (Math.min(100, Math.max(0, value)) / 100) * c;
+  // Draw-in: start from an empty ring, settle to the target on the next frame.
+  // Reduced motion renders the final value immediately.
+  const [drawn, setDrawn] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+  useEffect(() => {
+    if (drawn) return;
+    const raf = requestAnimationFrame(() => setDrawn(true));
+    return () => cancelAnimationFrame(raf);
+  }, [drawn]);
   return (
     <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
@@ -266,9 +278,9 @@ export function RadialGauge({
           stroke={color}
           strokeWidth={stroke}
           strokeDasharray={c}
-          strokeDashoffset={offset}
+          strokeDashoffset={drawn ? offset : c}
           strokeLinecap="round"
-          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+          style={{ transition: "stroke-dashoffset 600ms cubic-bezier(0.23, 1, 0.32, 1)" }}
         />
       </svg>
       <div className="absolute flex flex-col items-center">
