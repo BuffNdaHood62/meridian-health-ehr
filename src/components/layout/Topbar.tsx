@@ -4,13 +4,17 @@ import { Bell, Menu, Search, Command, Plus } from "lucide-react";
 import { loadPatients, loadAlerts, useAsync } from "../../data/api";
 import { Avatar } from "../ui/Avatar";
 import { AcuityBadge } from "../ui/Badge";
+import { ErrorNote } from "../ui/ErrorNote";
 import { formatTime } from "../../utils/format";
 import { cn } from "../../utils/cn";
 
 export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
   const navigate = useNavigate();
+  // ponytail: a patients-fetch error leaves search silently empty; every page
+  // that renders the same list shows its own ErrorNote. Upgrade path: inline
+  // "Search unavailable" row in the results dropdown.
   const { data: patients } = useAsync(loadPatients, []);
-  const { data: alerts } = useAsync(loadAlerts, []);
+  const { data: alerts, error: alertsError } = useAsync(loadAlerts, []);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
@@ -139,6 +143,9 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
             data-testid="notifications-button"
           >
             <Bell className="h-5 w-5" />
+            {alertsError && (
+              <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white" data-testid="notifications-error-dot" />
+            )}
             {criticalAlerts.length > 0 && (
               <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
                 {criticalAlerts.length}
@@ -154,6 +161,11 @@ export function Topbar({ onMenuClick }: { onMenuClick: () => void }) {
                 </p>
               </div>
               <div className="max-h-80 overflow-y-auto">
+                {alertsError && (
+                  <div className="px-4 pt-3">
+                    <ErrorNote message={alertsError} testId="topbar-alerts-error" />
+                  </div>
+                )}
                 {topNotifications.map((n) => (
                   <button
                     key={n.id}

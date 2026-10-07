@@ -168,3 +168,66 @@ export interface Alert {
   time: string;
   severity: "Critical" | "Warning" | "Info";
 }
+
+// ============================================================================
+// WWW registry (spec 2026-09-28)
+// ============================================================================
+
+/** Medical Review captured on the Dashboard; registered into Medical History. */
+export interface MedicalReviewEntry {
+  id: string;
+  clientName: string;
+  diagnosis: string;
+  historyOfEvents: string;
+  vitals: Record<string, number | null>;
+  savedAt: string;
+}
+
+export const WWW_AGE_BANDS = [
+  "Below 1 year",
+  "1-4 years",
+  "5-9 years",
+  "10-12 years",
+  "13-19 years",
+  "Above 20 years",
+] as const;
+
+export type WwwAgeBand = (typeof WWW_AGE_BANDS)[number];
+export type WwwStatus = "Admitted" | "Not admitted";
+
+/** One immutable visit/check-up record for a WWW client. */
+export interface WwwVisitEntry {
+  id: string;
+  /** Auto-assigned "001"…"999"; reuses the client's number on later visits. */
+  wwwNumber: string;
+  clientName: string;
+  ageBand: WwwAgeBand | "";
+  facility: string;
+  /** "" when the visit came from a Medical Review and admission wasn't recorded. */
+  status: WwwStatus | "";
+  complaints: string;
+  /** Subjective free-text note from the client. */
+  allergies: string;
+  /** Diagnosis carried in from a Dashboard Medical Review ("" for manual entries). */
+  diagnosis?: string;
+  // Demographics / biography (spec §1) — optional, filled from the demographics slot.
+  address?: string;
+  nextOfKin?: string;
+  nextOfKinPhone?: string;
+  motherName?: string;
+  motherPhone?: string;
+  fatherName?: string;
+  fatherPhone?: string;
+  vitals: {
+    tempC: number | null;
+    spo2Pct: number | null;
+    bpSys: number | null;
+    bpDia: number | null;
+    pulseBpm: number | null;
+    respRate: number | null;
+    weightKg: number | null;
+    heightCm: number | null;
+  };
+  visitAt: string;
+  savedAt: string;
+}

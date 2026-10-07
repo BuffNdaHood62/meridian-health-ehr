@@ -1,18 +1,20 @@
 import { useMemo, useState } from "react";
 import {
   Pill, FlaskConical, ScanLine, Stethoscope, ClipboardList, Plus, Trash2,
-  AlertTriangle, ShieldCheck, Zap, Clock, CheckCircle2, Send, Activity, Bed, LockKeyhole,
+  AlertTriangle, ShieldCheck, Zap, Clock, CheckCircle2, Send, Activity, Bed,
   FileWarning,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
+import { ErrorNote } from "../components/ui/ErrorNote";
 import { currentUser } from "../data/mockData";
 import { loadPatients, loadOrders, saveOrder, useAsync } from "../data/api";
 import type { OrderItem, OrderType, AdministrationStatus } from "../types";
 import { runCDS, type DraftOrder } from "../utils/cds";
-import { useDoctorCode, hasDoctorCode } from "../auth-doctor";
+import { useDoctorCode } from "../auth-doctor";
+import { CodeGate } from "../components/ui/CodeGate";
 import { useAuth } from "../auth";
 import { appendAudit, listAudit } from "../utils/audit";
 import { formatDateTime } from "../utils/format";
@@ -35,78 +37,14 @@ const catalog: Record<OrderType, string[]> = {
   Nursing: ["Neuro Checks Q1H", "Strict Intake & Output", "Fall Precautions", "Sequential Compression Devices", "Foley Catheter Care", "NPO After Midnight"],
 };
 
-// RFD §5 — doctor-code unlock screen shown in place of the order builder
-function CodeGate() {
-  const { unlock, setCode, attemptsLeft, lockedUntil } = useDoctorCode();
-  const [code, setLocal] = useState("");
-  const [error, setError] = useState("");
-  const locked = lockedUntil != null && lockedUntil > Date.now();
 
-  // ponytail: re-evaluate after unlock so the route-level step-up gate
-  // (RouteAuthenticationGate) re-evaluates on next render/navigation.
-  const recheck = () => {
-    try { sessionStorage.setItem("www-stepup-recheck", String(Date.now())); } catch { /* ignore */ }
-  };
-
-  const submit = async () => {
-    setError("");
-    if (!hasDoctorCode()) {
-      const ok = await setCode(code);
-      if (!ok) { setError("Code must be at least 8 characters."); return; }
-      recheck();
-      return;
-    }
-    const ok = await unlock(code);
-    if (!ok) {
-      setError(locked ? "Locked — try again later." : `Incorrect code. ${attemptsLeft - 1} attempt(s) left.`);
-      return;
-    }
-    recheck();
-  };
-
-  return (
-    <div className="mx-auto mt-16 max-w-sm" data-testid="orders-gate">
-      <Card className="p-6">
-        <div className="mb-4 flex items-center gap-2">
-          <LockKeyhole className="h-5 w-5 text-brand-600" />
-          <h2 className="text-base font-bold text-slate-900">Doctor code required</h2>
-        </div>
-        <p className="mb-4 text-xs text-slate-500">
-          {hasDoctorCode()
-            ? "Enter your personal doctor code to open WWW Orders. 5 wrong attempts lock this page for 15 minutes."
-            : "First time here: set a personal doctor code (min 8 characters). You will be asked for it next visit."}
-        </p>
-        <input
-          type="password"
-          value={code}
-          onChange={(e) => setLocal(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Doctor code"
-          data-testid="doctor-code-input"
-          aria-label="Doctor code"
-          aria-invalid={!!error}
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
-        />
-        {error && <p className="mt-2 text-xs font-medium text-rose-600">{error}</p>}
-        <button
-          onClick={submit}
-          disabled={!code}
-          data-testid="doctor-code-submit"
-          className="mt-3 w-full rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:bg-slate-300"
-        >
-          {hasDoctorCode() ? "Unlock Orders" : "Set code & continue"}
-        </button>
-      </Card>
-    </div>
-  );
-}
-
-function OrdersInner() {
+function OrdersInner({ readOnly = false }: { readOnly?: boolean }) {
   const { currentUser: liveUser } = useAuth();
-  const { data: patients, loading } = useAsync(loadPatients, []);
+  const { data: patients, loading, error: loadError } = useAsync(loadPatients, []);
   const [patientId, setPatientId] = useState<string | null>(null);
   const effectivePatientId = patientId ?? patients?.[0]?.id ?? null;
-  const { data: initialOrders } = useAsync(() => loadOrders(effectivePatientId ?? ""), [effectivePatientId]);
+  const { data: initialOrders, error: ordersError } = useAsync(() => loadOrders(effectivePatientId ?? ""), [effectivePatientId]);
+  const [saveError, setSaveError] = useState("");
   const [type, setType] = useState<OrderType>("Medication");
   const [selectedName, setSelectedName] = useState("");
   const [detail, setDetail] = useState("");
@@ -141,7 +79,13 @@ function OrdersInner() {
 
   // ponytail: unreachable with current mock data; guards future edits instead of `!`
   if (loading) return <div className="p-8 text-center text-sm text-slate-500">Loading…</div>;
-  if (!patient) return null;
+  if (!patient) {
+    return (
+      <div className="p-6">
+        {loadError && <ErrorNote message={loadError} testId="orders-load-error" />}
+      </div>
+    );
+  }
 
   const addToCart = () => {
     if (!selectedName) return;
@@ -170,28 +114,38 @@ function OrdersInner() {
     setSubmitted((s) => [...newOrders, ...s]);
     for (const o of newOrders) {
       appendAudit("sign", "Order", o.id, o.name);
-      saveOrder(o);
     }
     setAudit(listAudit());
     setCart([]);
+    setSaveError("");
+    // Optimistic: cart is committed locally, then persistence errors surface.
+    void Promise.all(newOrders.map(saveOrder)).catch((e: unknown) =>
+      setSaveError(e instanceof Error ? e.message : "Failed to save orders.")
+    );
   };
 
   return (
     <div data-testid="orders-page">
+      {ordersError && <ErrorNote message={ordersError} testId="orders-loadexisting-error" />}
+      {saveError && <ErrorNote message={`Orders shown here may not be saved. ${saveError}`} testId="order-save-error" />}
       <PageHeader
         title="WWW Orders"
-        subtitle="Place medication, lab, imaging, and care orders with built-in safety checks."
+        subtitle={readOnly
+          ? "Review signed orders and record administration. Ordering is disabled for your role."
+          : "Place medication, lab, imaging, and care orders with built-in safety checks."}
         actions={
           <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5">
             <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            <span className="text-xs font-medium text-slate-600">CDS active</span>
+            <span className="text-xs font-medium text-slate-600">
+              {readOnly ? "Read-only" : "CDS active"}
+            </span>
           </div>
         }
       />
 
       {/* Patient selector */}
       <Card className="mb-6 p-4">
-        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">Ordering for</label>
+        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">{readOnly ? "Reviewing orders for" : "Ordering for"}</label>
         <div className="flex flex-wrap gap-2">
           {patients?.filter((p) => p.status !== "Outpatient" && p.status !== "Discharged").map((p) => (
             <button
@@ -222,6 +176,7 @@ function OrdersInner() {
         )}
       </Card>
 
+      {!readOnly && (
       <div className="grid gap-6 lg:grid-cols-5">
         {/* Order builder */}
         <div className="lg:col-span-3">
@@ -390,9 +345,10 @@ function OrdersInner() {
           </Card>
         </div>
       </div>
+      )}
 
       {/* RFD §5 — Order History side tab with per-order signature + administration */}
-      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+      <div className={cn("grid gap-6 lg:grid-cols-3", !readOnly && "mt-6")}>
         <Card className="lg:col-span-2">
           <CardHeader title="Order History" subtitle="Active and recent orders for the selected patient" icon={<Activity className="h-[18px] w-[18px]" />} />
           <div className="overflow-x-auto">
@@ -498,8 +454,14 @@ function AdministeredCell({
 }
 
 
-/** RFD §5: route content only renders after doctor-code unlock */
+/**
+ * RFD §5: doctors reach this page only after unlocking with their doctor code.
+ * Other clinical roles (nurse) see it read-only — they must confirm what was
+ * ordered and record administration, but cannot create or sign orders.
+ */
 export default function Orders() {
-  const { unlocked } = useDoctorCode();
-  return unlocked ? <OrdersInner /> : <CodeGate />;
+  const { isUnlocked } = useDoctorCode();
+  const { currentUser } = useAuth();
+  if ((currentUser?.role ?? "doctor") !== "doctor") return <OrdersInner readOnly />;
+  return isUnlocked("orders") ? <OrdersInner /> : <CodeGate pageKey="orders" page="WWW Orders" testId="orders-gate" />;
 }

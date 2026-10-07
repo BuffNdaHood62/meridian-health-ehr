@@ -9,8 +9,8 @@ export function PageHeader({
   actions,
   className,
 }: {
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   breadcrumbs?: { label: string; to?: string }[];
   actions?: React.ReactNode;
   className?: string;

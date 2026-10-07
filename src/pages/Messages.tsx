@@ -8,6 +8,7 @@ import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
+import { ErrorNote } from "../components/ui/ErrorNote";
 import { loadMessages, sendMessage, useAsync } from "../data/api";
 import type { Message } from "../types";
 import { formatDateTime } from "../utils/format";
@@ -35,7 +36,7 @@ type Draft = {
 const emptyDraft: Draft = { to: "", category: "Staff", priority: "Normal", subject: "", body: "" };
 
 export default function Messages() {
-  const { data: messages, loading } = useAsync(loadMessages, []);
+  const { data: messages, loading, error } = useAsync(loadMessages, []);
   const { currentUser } = useAuth();
 
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
@@ -151,6 +152,7 @@ export default function Messages() {
 
   return (
     <div data-testid="messages-page">
+      {error && <ErrorNote message={error} testId="messages-error" />}
       {loading && <p className="mb-4 text-sm text-slate-500">Loading messages…</p>}
       <PageHeader
         title="Secure Messages"

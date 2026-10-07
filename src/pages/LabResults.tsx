@@ -1,11 +1,17 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Search, FlaskConical, AlertOctagon, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Search, FlaskConical, AlertOctagon, AlertTriangle, CheckCircle2, Clock, Plus } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
+import { ErrorNote } from "../components/ui/ErrorNote";
+import { Modal } from "../components/ui/Modal";
+import { CodeGate } from "../components/ui/CodeGate";
+import { useDoctorCode } from "../auth-doctor";
 import { loadPatients, useAsync } from "../data/api";
+import { loadUserLabs, addUserLab, type UserLabEntry } from "../utils/labEntries";
+import type { Patient } from "../types";
 import { cn } from "../utils/cn";
 
 interface FlatLab {
@@ -26,14 +32,22 @@ interface FlatLab {
 
 const flagFilters = ["All", "Critical", "Abnormal", "Normal"] as const;
 
-export default function LabResults() {
+function LabResultsInner() {
   const [query, setQuery] = useState("");
   const [flag, setFlag] = useState<string>("All");
-  const { data: patients } = useAsync(loadPatients, []);
+  const [showAdd, setShowAdd] = useState(false);
+  const [userLabs, setUserLabs] = useState<UserLabEntry[]>(loadUserLabs);
+  const { data: patients, error } = useAsync(loadPatients, []);
 
   const allLabs: FlatLab[] = useMemo(
-    () =>
-      (patients ?? []).flatMap((p) =>
+    () => [
+      ...userLabs.map((l) => ({
+        patientId: l.patientId, patientName: l.patientName, initials: l.initials,
+        avatarColor: l.avatarColor, department: l.department, labId: l.id,
+        name: l.name, value: l.value, unit: l.unit, range: l.range, flag: l.flag,
+        category: l.category, collected: l.collected,
+      })),
+      ...(patients ?? []).flatMap((p) =>
         p.labs.map((l) => ({
           patientId: p.id,
           patientName: `${p.firstName} ${p.lastName}`,
@@ -49,8 +63,8 @@ export default function LabResults() {
           category: l.category,
           collected: l.collected,
         }))
-      ),
-    [patients]
+      )],
+    [patients, userLabs]
   );
 
   const filtered = allLabs.filter((l) => {
@@ -75,10 +89,22 @@ export default function LabResults() {
 
   return (
     <div data-testid="labs-page">
+      {error && <ErrorNote message={error} testId="labs-error" />}
       <PageHeader
         title="Laboratory Results"
         subtitle="Review and triage lab results across all patients."
-        actions={<Badge tone="brand" className="px-3 py-1.5 text-sm">{stats.total} results</Badge>}
+        actions={
+          <>
+            <button
+              onClick={() => setShowAdd(true)}
+              data-testid="add-lab-result"
+              className="flex items-center gap-1.5 rounded-xl bg-brand-600 px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-700"
+            >
+              <Plus className="h-4 w-4" /> Add Result
+            </button>
+            <Badge tone="brand" className="px-3 py-1.5 text-sm">{stats.total} results</Badge>
+          </>
+        }
       />
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -194,6 +220,100 @@ export default function LabResults() {
           </div>
         )}
       </Card>
+
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add Laboratory Result" description="Once saved, a result cannot be edited — corrections are recorded as a new entry.">
+        <LabAddForm
+          patients={patients ?? []}
+          onSaved={(list) => { setUserLabs(list); setShowAdd(false); }}
+        />
+      </Modal>
     </div>
   );
+}
+
+// Spec §4 — new lab results are entered here; append-only store in utils/labEntries.
+function LabAddForm({ patients, onSaved }: { patients: Patient[]; onSaved: (list: UserLabEntry[]) => void }) {
+  const [form, setForm] = useState({
+    patientId: "", name: "", value: "", unit: "", range: "",
+    flag: "Normal" as UserLabEntry["flag"],
+    category: "Hematology", collected: new Date().toISOString().slice(0, 10),
+  });
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+  const valid = form.patientId !== "" && form.name.trim() !== "" && form.value.trim() !== "";
+
+  const save = () => {
+    if (!valid) return;
+    const p = patients.find((x) => x.id === form.patientId);
+    if (!p) return;
+    const entry: UserLabEntry = {
+      id: `ul-${crypto.randomUUID()}`,
+      patientId: p.id, patientName: `${p.firstName} ${p.lastName}`, initials: p.initials,
+      avatarColor: p.avatarColor, department: p.department,
+      name: form.name.trim(), value: form.value.trim(), unit: form.unit.trim(), range: form.range.trim(),
+      flag: form.flag, category: form.category, collected: form.collected,
+      savedAt: new Date().toISOString(),
+    };
+    onSaved(addUserLab(entry));
+  };
+
+  const cls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100";
+  return (
+    <div className="grid gap-3 sm:grid-cols-2" data-testid="lab-add-form">
+      <label className="block sm:col-span-2">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Client *</span>
+        <select value={form.patientId} onChange={(e) => set({ patientId: e.target.value })} data-testid="lab-form-patient" className={cls}>
+          <option value="">Select client…</option>
+          {patients.map((p) => (
+            <option key={p.id} value={p.id}>{`${p.firstName} ${p.lastName} — ${p.mrn}`}</option>
+          ))}
+        </select>
+      </label>
+      <label className="block sm:col-span-2">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Test name *</span>
+        <input value={form.name} onChange={(e) => set({ name: e.target.value })} data-testid="lab-form-name" className={cls} placeholder="e.g. Malaria RDT" />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Result *</span>
+        <input value={form.value} onChange={(e) => set({ value: e.target.value })} data-testid="lab-form-value" className={cls} />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Unit</span>
+        <input value={form.unit} onChange={(e) => set({ unit: e.target.value })} className={cls} placeholder="e.g. g/dL" />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Reference range</span>
+        <input value={form.range} onChange={(e) => set({ range: e.target.value })} className={cls} placeholder="e.g. 11.0-16.0" />
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Flag</span>
+        <select value={form.flag} onChange={(e) => set({ flag: e.target.value as UserLabEntry["flag"] })} className={cls}>
+          {["Normal", "High", "Low", "Critical"].map((f) => <option key={f}>{f}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Category</span>
+        <select value={form.category} onChange={(e) => set({ category: e.target.value })} className={cls}>
+          {["Hematology", "Chemistry", "Coagulation", "Microbiology", "Endocrinology", "Parasitology"].map((c) => <option key={c}>{c}</option>)}
+        </select>
+      </label>
+      <label className="block">
+        <span className="mb-0.5 block text-[11px] font-medium text-slate-500">Collected</span>
+        <input type="date" value={form.collected} onChange={(e) => set({ collected: e.target.value })} className={cls} />
+      </label>
+      <button
+        onClick={save}
+        disabled={!valid}
+        data-testid="lab-form-save"
+        className="mt-1 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 sm:col-span-2"
+      >
+        Save Result
+      </button>
+    </div>
+  );
+}
+
+export default function LabResults() {
+  const { isUnlocked } = useDoctorCode();
+  // Spec §4 — laboratory results are encrypted behind the doctor code, per page.
+  return isUnlocked("labs") ? <LabResultsInner /> : <CodeGate pageKey="labs" page="Lab Results" testId="labs-gate" />;
 }

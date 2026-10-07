@@ -2,13 +2,17 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Search, HeartPulse, Stethoscope, Activity, Syringe, FileText, Droplet,
-  ShieldAlert, Filter,
+  ShieldAlert, Filter, ClipboardList,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge, type Tone } from "../components/ui/Badge";
+import { ErrorNote } from "../components/ui/ErrorNote";
+import { CodeGate } from "../components/ui/CodeGate";
+import { useDoctorCode } from "../auth-doctor";
 import { loadPatients, useAsync } from "../data/api";
+import { loadMedicalReviews } from "../utils/medicalReviews";
 import { formatDate } from "../utils/format";
 import { cn } from "../utils/cn";
 
@@ -27,39 +31,58 @@ interface FlatEvent {
 
 const typeIcon: Record<string, React.ElementType> = {
   Diagnosis: HeartPulse, Surgery: Stethoscope, Imaging: Activity, Procedure: Syringe,
-  Visit: FileText, Vaccination: Droplet, Allergy: ShieldAlert,
+  Visit: FileText, Vaccination: Droplet, Allergy: ShieldAlert, "Medical Review": ClipboardList,
 };
 const typeTone: Record<string, Tone> = {
   Diagnosis: "red", Surgery: "violet", Imaging: "blue", Procedure: "violet",
-  Visit: "slate", Vaccination: "green", Allergy: "amber",
+  Visit: "slate", Vaccination: "green", Allergy: "amber", "Medical Review": "green",
 };
-const allTypes = ["All", "Diagnosis", "Surgery", "Imaging", "Procedure", "Visit", "Vaccination", "Allergy"];
+const allTypes = ["All", "Medical Review", "Diagnosis", "Surgery", "Imaging", "Procedure", "Visit", "Vaccination", "Allergy"];
 
-export default function MedicalHistory() {
+function reviewVitalsSummary(vitals: Record<string, number | null>): string {
+  const parts = Object.entries(vitals)
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `${k}: ${v}`);
+  return parts.length ? `Vitals — ${parts.join(" · ")}` : "";
+}
+
+function MedicalHistoryInner() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("All");
-  const { data: patients } = useAsync(loadPatients, []);
+  const { data: patients, error } = useAsync(loadPatients, []);
 
-  const events = useMemo<FlatEvent[]>(
-    () =>
-      (patients ?? [])
-        .flatMap((p) =>
-          p.history.map((h) => ({
-            patientId: p.id,
-            patientName: `${p.firstName} ${p.lastName}`,
-            initials: p.initials,
-            avatarColor: p.avatarColor,
-            eventId: `${p.id}-${h.id}`,
-            date: h.date,
-            title: h.title,
-            type: h.type,
-            description: h.description,
-            provider: h.provider,
-          }))
-        )
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [patients]
-  );
+  const events = useMemo<FlatEvent[]>(() => {
+    // Dashboard Medical Reviews register here as timeline events (spec §1/§5).
+    const reviewEvents: FlatEvent[] = loadMedicalReviews().map((r) => ({
+      patientId: "",
+      patientName: r.clientName,
+      initials: r.clientName.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join(""),
+      avatarColor: "#13726c",
+      eventId: r.id,
+      date: r.savedAt,
+      title: `Medical Review — ${r.diagnosis}`,
+      type: "Medical Review",
+      description: [r.historyOfEvents, reviewVitalsSummary(r.vitals)].filter(Boolean).join(" · "),
+      provider: "WWW intake review",
+    }));
+    return [
+      ...reviewEvents,
+      ...(patients ?? []).flatMap((p) =>
+        p.history.map((h) => ({
+          patientId: p.id,
+          patientName: `${p.firstName} ${p.lastName}`,
+          initials: p.initials,
+          avatarColor: p.avatarColor,
+          eventId: `${p.id}-${h.id}`,
+          date: h.date,
+          title: h.title,
+          type: h.type,
+          description: h.description,
+          provider: h.provider,
+        }))
+      ),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [patients]);
 
   const filtered = events.filter((e) => {
     const matchesQuery =
@@ -84,6 +107,7 @@ export default function MedicalHistory() {
 
   return (
     <div data-testid="history-page">
+      {error && <ErrorNote message={error} testId="history-error" />}
       <PageHeader
         title="Medical History Registry"
         subtitle="A longitudinal, cross-patient record of clinical events."
@@ -140,9 +164,13 @@ export default function MedicalHistory() {
                           <div className="flex items-center gap-2.5">
                             <Avatar initials={e.initials} color={e.avatarColor} size="sm" />
                             <div>
+                            {e.patientId ? (
                               <Link to={`/patients/${e.patientId}`} className="text-sm font-semibold text-slate-900 hover:text-brand-700">
                                 {e.title}
                               </Link>
+                            ) : (
+                              <p className="text-sm font-semibold text-slate-900">{e.title}</p>
+                            )}
                               <p className="text-xs text-slate-500">{e.patientName}</p>
                             </div>
                           </div>
@@ -171,4 +199,10 @@ export default function MedicalHistory() {
       )}
     </div>
   );
+}
+
+export default function MedicalHistory() {
+  const { isUnlocked } = useDoctorCode();
+  // Spec §5 — medical history is encrypted behind the doctor code, per page.
+  return isUnlocked("history") ? <MedicalHistoryInner /> : <CodeGate pageKey="history" page="Medical History" testId="history-gate" />;
 }

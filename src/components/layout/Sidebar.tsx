@@ -5,6 +5,7 @@ import { navItems } from "./nav";
 import { currentUser } from "../../data/mockData";
 import { useAuth } from "../../auth";
 import { Avatar } from "../ui/Avatar";
+import { WwwLogo } from "../ui/WwwLogo";
 import { cn } from "../../utils/cn";
 
 function isActive(to: string, match: ((p: string) => boolean) | undefined, pathname: string) {
@@ -53,11 +54,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
         {/* Brand */}
         <div className="flex h-16 items-center justify-between gap-3 border-b border-slate-100 px-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 shadow-lg shadow-brand-200">
-              <svg viewBox="0 0 24 24" className="h-6 w-6 text-white" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3v18M3 12h18" />
-              </svg>
-            </div>
+            <WwwLogo />
             <div>
               <p className="text-sm font-bold leading-tight text-slate-900">Wellness with Writingale</p>
               <p className="text-[11px] font-medium leading-tight text-brand-600">EMR Platform</p>

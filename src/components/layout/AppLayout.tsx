@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
-import { DEMO_MODE } from "../../config";
+import { DEMO_MODE, SUPPORT_EMAIL, SUPPORT_PHONE } from "../../config";
 
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -25,6 +25,12 @@ export function AppLayout() {
           <div className="animate-fade-in">
             <Outlet />
           </div>
+          {/* Support contact — present in every section (spec 2026-09-28) */}
+          <footer className="mt-10 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500" data-testid="support-footer">
+            <span>Need help?</span>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="font-medium text-brand-600 hover:text-brand-700">{SUPPORT_EMAIL}</a>
+            <a href={`tel:${SUPPORT_PHONE.replace(/\s/g, "")}`} className="font-medium text-brand-600 hover:text-brand-700">{SUPPORT_PHONE}</a>
+          </footer>
         </main>
       </div>
       <BottomNav />

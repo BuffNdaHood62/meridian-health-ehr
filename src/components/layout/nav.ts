@@ -19,7 +19,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { label: "Dashboard", to: "/", icon: LayoutDashboard },
   {
-    label: "Patients",
+    label: "Clients",
     to: "/patients",
     icon: Users,
     match: (p) => p.startsWith("/patients"),

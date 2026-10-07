@@ -25,7 +25,7 @@ export const USERS: WWWUser[] = [
 /** Which nav destinations each role may see (RFD §2.2 access levels) */
 export const ROLE_ROUTES: Record<Role, string[]> = {
   doctor: ["/", "/patients", "/orders", "/labs", "/history", "/messages", "/settings"],
-  nurse: ["/", "/patients", "/labs", "/history", "/messages", "/settings"],
+  nurse: ["/", "/patients", "/orders", "/labs", "/history", "/messages", "/settings"],
   reception: ["/", "/patients", "/messages", "/settings"],
   admin: ["/", "/messages", "/settings"],
   lab: ["/", "/labs", "/messages", "/settings"],

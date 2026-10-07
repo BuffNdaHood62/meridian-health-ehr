@@ -6,3 +6,8 @@
 export const DEMO_MODE = true;
 
 export const APP_NAME = "Wellness with Writingale EMR";
+
+// Support contact shown in every section footer.
+// ponytail: placeholders — replace with the foundation's real details when provided.
+export const SUPPORT_EMAIL = "support@example.org";
+export const SUPPORT_PHONE = "+234 800 000 0000";

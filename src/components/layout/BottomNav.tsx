@@ -6,7 +6,7 @@ import { cn } from "../../utils/cn";
 
 const tabs = [
   { to: "/", icon: LayoutDashboard, label: "Dash" },
-  { to: "/patients", icon: Users, label: "Patients" },
+  { to: "/patients", icon: Users, label: "Clients" },
   { to: "/history", icon: History, label: "History" },
   { to: "/messages", icon: MessageSquare, label: "Messages" },
   { to: "/orders", icon: ClipboardList, label: "Orders" },

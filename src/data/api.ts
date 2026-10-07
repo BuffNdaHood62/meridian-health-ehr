@@ -10,6 +10,13 @@ import type { Patient, Message, OrderItem, Alert, Appointment } from "../types";
 // ============================================================================
 
 // ---- assembly: child rows -> nested arrays on the Patient shape ----
+
+// A failed query must reject, never resolve to `data ?? []` — in a clinical
+// screen, a silent empty list is indistinguishable from "no records".
+function ensure(error: { message: string } | null, what: string): void {
+  if (error) throw new Error(`${what}: ${error.message}`);
+}
+
 // ponytail: column shapes mirror supabase/migrations/0001+0004; widen if schema grows.
 interface PatientRow {
   id: string;
@@ -98,7 +105,8 @@ async function fetchChildRows(patientId?: string): Promise<ChildRow[]> {
   const buckets = await Promise.all(
     tables.map(async (t) => {
       const base = supabase.from(t).select("*");
-      const { data } = await (patientId ? base.eq("patient_id", patientId) : base);
+      const { data, error } = await (patientId ? base.eq("patient_id", patientId) : base);
+      ensure(error, `Failed to load ${t}`);
       return (data ?? []).map((r) => ({ ...r, table: t }));
     })
   );
@@ -106,16 +114,20 @@ async function fetchChildRows(patientId?: string): Promise<ChildRow[]> {
 }
 
 export async function loadPatients(): Promise<Patient[]> {
-  if (!isSupabaseConfigured) return mockPatients;
-  const { data: ps } = await supabase.from("patients").select("*");
+  // Spec 2026-09-28: MRNs should read in ascending order everywhere clients are listed.
+  const byMrn = (a: Patient, b: Patient) => a.mrn.localeCompare(b.mrn);
+  if (!isSupabaseConfigured) return [...mockPatients].sort(byMrn);
+  const { data: ps, error } = await supabase.from("patients").select("*");
+  ensure(error, "Failed to load patients");
   const children = await fetchChildRows();
-  return (ps ?? []).map((p) => assemblePatient(p, children.filter((c) => c.patient_id === p.id)));
+  return (ps ?? []).map((p) => assemblePatient(p, children.filter((c) => c.patient_id === p.id))).sort(byMrn);
 }
 
 // Single-patient fetch: queries scoped by id instead of load-all-then-filter.
 export async function loadPatient(id: string): Promise<Patient | null> {
   if (!isSupabaseConfigured) return mockPatients.find((p) => p.id === id) ?? null;
-  const { data: p } = await supabase.from("patients").select("*").eq("id", id).maybeSingle();
+  const { data: p, error } = await supabase.from("patients").select("*").eq("id", id).maybeSingle();
+  ensure(error, "Failed to load patient");
   if (!p) return null;
   const children = await fetchChildRows(id);
   return assemblePatient(p, children);
@@ -124,10 +136,11 @@ export async function loadPatient(id: string): Promise<Patient | null> {
 export async function loadMessages(): Promise<Message[]> {
   if (!isSupabaseConfigured) return mockMessages;
   // sender embed: from_profile -> profiles.full_name gives a displayable name.
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("messages")
     .select("*, sender:profiles(full_name)")
     .order("created_at", { ascending: false });
+  ensure(error, "Failed to load messages");
   return (data ?? []).map((m) => ({
     id: m.id,
     from: m.sender?.full_name ?? m.from_role ?? "System",
@@ -174,7 +187,8 @@ export async function sendMessage(msg: Message): Promise<string> {
 
 export async function loadOrders(patientId: string): Promise<OrderItem[]> {
   if (!isSupabaseConfigured) return mockOrders.filter((o) => o.patientId === patientId);
-  const { data } = await supabase.from("orders").select("*").eq("patient_id", patientId);
+  const { data, error } = await supabase.from("orders").select("*").eq("patient_id", patientId);
+  ensure(error, "Failed to load orders");
   return (data ?? []).map((o) => ({
     id: o.id,
     patientId: o.patient_id,
@@ -192,7 +206,7 @@ export async function loadOrders(patientId: string): Promise<OrderItem[]> {
 
 export async function saveOrder(order: OrderItem): Promise<void> {
   if (!isSupabaseConfigured) return; // demo: in-memory only
-  await supabase.from("orders").insert({
+  const { error } = await supabase.from("orders").insert({
     id: order.id,
     patient_id: order.patientId,
     type: order.type,
@@ -204,11 +218,13 @@ export async function saveOrder(order: OrderItem): Promise<void> {
     ordered_by: (await supabase.auth.getUser()).data.user?.id ?? null,
     administered: order.administered ?? "Pending",
   });
+  ensure(error, "Failed to save order");
 }
 
 export async function loadAlerts(): Promise<Alert[]> {
   if (!isSupabaseConfigured) return mockAlerts;
-  const { data } = await supabase.from("alerts").select("*"); // ponytail: alerts table assumed; seed separately
+  const { data, error } = await supabase.from("alerts").select("*"); // ponytail: alerts table assumed; seed separately
+  ensure(error, "Failed to load alerts");
   return (data ?? []).map((a) => ({
     id: a.id, patientId: a.patient_id, patientName: a.patient_name, initials: a.initials ?? "",
     avatarColor: a.avatar_color ?? "#e11d48", type: a.type ?? "Alert", message: a.message ?? "",
@@ -218,7 +234,8 @@ export async function loadAlerts(): Promise<Alert[]> {
 
 export async function loadAppointments(): Promise<Appointment[]> {
   if (!isSupabaseConfigured) return mockAppointments;
-  const { data } = await supabase.from("appointments").select("*");
+  const { data, error } = await supabase.from("appointments").select("*");
+  ensure(error, "Failed to load appointments");
   return (data ?? []).map((a) => ({
     id: a.id, patientId: a.patient_id, patientName: a.patient_name, patientInitials: a.patient_initials ?? "",
     avatarColor: a.avatar_color ?? "#13726c", time: a.time ?? "", durationMin: a.duration_min ?? 30,

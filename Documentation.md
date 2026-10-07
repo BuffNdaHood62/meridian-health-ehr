@@ -4,6 +4,142 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-09-28 — Refinement pass: per-page encryption, demographics record, review→Clients, appointments
+
+Second client-feedback list (17 items) received 2026-09-28.
+
+### Encryption was the reported bug — root cause and fix
+"The lab results page is not encrypted": a single global unlock flag meant opening
+Orders also opened Lab Results and Medical History.
+1. **`src/auth-doctor.tsx`** — unlocks are now **per page** (`isUnlocked(page)`,
+   `unlock(code, page)`, `setCode(code, page)`, `lock(page)`) and **bound to the
+   signed-in session**: `www-page-unlocks` stores `{ sessionId, pages[] }` and is
+   ignored when `sessionId` differs, so a doctor's unlock is not inherited by the
+   next user on the same workstation. Lockout (5 attempts / 15 min) unchanged.
+2. **`src/components/ui/CodeGate.tsx`** — takes `pageKey` + display `page`, and
+   **fails closed for non-doctors**: a nurse/admin/lab who reaches Lab Results or
+   Medical History gets "Doctor access only" instead of a field where they could
+   provision the code themselves on a fresh profile.
+3. Gates: Orders `pageKey="orders"`, Lab Results `"labs"`, Medical History `"history"`.
+   Verified in the browser: unlocking `labs` leaves `history` and `orders` gated;
+   a new session is prompted again; wrong code decrements attempts (4 left) and
+   the correct code opens.
+
+### Nurse access to orders (was: unreadable behind the doctor code)
+`ROLE_ROUTES.nurse` gains `/orders`; **`Orders.tsx`** renders `OrdersInner readOnly`
+for any non-doctor without a code prompt — New Order builder and Sign & Submit are
+removed, Order History + the Administered/recipient workflow stay usable (nurses
+record administration). Header states "Review signed orders and record
+administration."
+
+### Dashboard / registry
+- Title **"Wellness with Writingale"** (EMR Platform moved to the sidebar), subtitle
+  "Good <morning|afternoon|evening>, Doctor".
+- **Height (cm)** added to Medical Review vitals and to registry vitals
+  (`WwwVisitEntry.vitals.heightCm`), shown in the record sheet and print/mail export.
+- **"Recent Medical Reviews" card removed** for privacy; a saved review now goes
+  straight to (a) the Medical History timeline and (b) the Clients registry via
+  `registerReviewAsVisit()` in `wwwRecords.ts` — it reuses the client's existing WWW
+  number, carries `diagnosis`, and pulls biography from the demographics record.
+  `ageBand`/`status` widened to allow `""` (a review doesn't record them; the table
+  shows "—" and a "Review" badge).
+- **Appointments**: the removed Schedule page's job moved to a Dashboard slot
+  (`src/utils/appointments.ts`, `www-appointments`) with book/cancel; bookings feed
+  the "WWW Scheduled Appointments" KPI.
+- Seed data bug: Grace Etim's second visit had been seeded with its own number
+  (005), so one client appeared twice; second visit now shares 002 (5 entries →
+  4 clients), and seed ids include the visit day so they stay unique.
+
+### Demographics: where it saves and whether it's editable
+New **`src/utils/demographics.ts`** — records keyed by client name in
+`www-demographics`; the Dashboard slot autosaves 800ms after typing and
+**re-typing a known client name loads the stored record, so it is editable**
+(upsert). Added fields: address, next of kin + phone, mother's name + phone,
+father's name + phone; `ageBandFromDob()` derives the registry age band from the
+saved date of birth. Saved biography is copied into new visit entries and shown
+in the expanded client record.
+
+### Other
+- **MRN order**: `loadPatients` now sorts by MRN ascending (mock and Supabase
+  paths), fixing unordered numbers in the Orders selector and Lab Results picker.
+- **Support contact** on every screen: footer in `AppLayout` using
+  `SUPPORT_EMAIL` / `SUPPORT_PHONE` in `src/config.ts` — **placeholders** pending
+  the real details; the foundation logo file is also still pending (`WwwLogo`
+  remains a placeholder emblem).
+
+Verified: `vitest` 39/39 · `tsc --noEmit` clean · `eslint --max-warnings=0` on all
+changed files (auth-doctor keeps its 2 pre-existing react-refresh warnings) ·
+`vite build` OK · flows re-checked live in the browser (branding, demographics
+persist, review→Clients+History, per-page gates, nurse read-only, MRN order).
+
+---
+
+## 2026-09-28 — WWW spec pass: registry, platform branding, encrypted pages, add-result entry
+
+Client-facing spec received 2026-09-28 (dashboard naming, WWW clients registry,
+page encryption, message logins). What changed and what already existed:
+
+### New
+1. **`src/utils/wwwRecords.ts`** — WWW Clients registry: append-only, immutable
+   visit entries in localStorage (`www-client-entries`), auto-assigned
+   zero-padded numbers 001–999 (`nextWwwNumber`, `wwwNumberForClient`), first-run
+   demo seed, `clientRecordText` for export. Unit-tested in `wwwRecords.test.ts`
+   (+7 tests, 39 total green).
+2. **`src/pages/Patients.tsx` rewritten** — columns WWW #, Client, Age band
+   (6 fixed bands from `WWW_AGE_BANDS`), Facility, Status (Admitted / Not
+   admitted), Complaints, Allergies (subjective free-text), Vitals + Weight.
+   Tap name → full record, every visit newest-first; "New visit entry" per
+   client; entries locked after save; Print (pop-out sheet) and Email (mailto
+   with encoded record) per visit. Nav labels: sidebar "WWW Clients", mobile "WWW".
+3. **`src/components/ui/CodeGate.tsx`** — doctor-code gate extracted from Orders
+   (was private there) and now also guards **Lab Results** and **Medical History**
+   (spec: "encrypt this page"). One code, one session unlock per browser.
+4. **Lab Results add-entry** — "Add Result" modal → `src/utils/labEntries.ts`
+   (append-only `www-lab-results`), merged into the table with mock/supabase rows.
+5. **Medical Reviews register to History** — `src/utils/medicalReviews.ts` shared
+   store; Dashboard reviews appear on the Medical History timeline as
+   "Medical Review" events (with vitals summary). Reviews also show the matched
+   client's active orders inline (spec §1).
+6. **Dashboard header** — "Wellness with Writingale EMR Platform" with logo mark
+   (`src/components/ui/WwwLogo.tsx` — placeholder emblem until the foundation
+   supplies its logo file); greeting no longer names a doctor; 4th KPI card is
+   now "WWW Priority Clients" (Critical+Serious acuity) instead of Critical Alerts.
+
+### Already satisfied by existing code (unchanged)
+- Orders doctor-code encryption, Order History side tab with Signed-by /
+  Administered / recipient name; Schedule page already removed; 5-account user
+  directory (doctor/nurse/reception/admin/lab) + multi-account signup.
+
+Verified: `vitest` 39/39, `tsc --noEmit` clean, `eslint --max-warnings=0` on all
+changed files, `vite build` OK.
+
+---
+
+## 2026-09-28 — Error propagation in the Supabase data layer (audit P0-2)
+
+The audit's top open finding: every read in `src/data/api.ts` dropped the Supabase
+`error`, so a failed query resolved to `[]` and pages rendered a clinically dangerous
+"no records" state. Now:
+
+1. **`api.ts`** — added `ensure(error, what)`; `fetchChildRows` (names the failing
+   table), `loadPatients`, `loadPatient`, `loadMessages`, `loadOrders`, `saveOrder`,
+   `loadAlerts` and `loadAppointments` all reject on error. `useAsync` already exposed
+   `error`; it was simply ignored by every consumer.
+2. **`src/components/ui/ErrorNote.tsx`** — new shared rose banner (`role="alert"`,
+   `data-testid`) matching the existing inline error style.
+3. **Surfacing** — `Patients`, `LabResults`, `MedicalHistory`, `Messages`, `Dashboard`
+   (per-source banner), `Orders` (load-failure state replaces the silent `return null`;
+   `saveOrder` is awaited after the optimistic commit and failure shows), and
+   `PatientDetail` (fetch error is now distinguishable from "Patient not found").
+4. **`Topbar`** — alerts failure marks the bell with a red dot and an `ErrorNote` in
+   the dropdown; the search list keeps its silent-empty behavior with a `ponytail:`
+   comment (pages already surface the same `loadPatients` failure).
+
+Verified: `vitest` 32/32, `tsc --noEmit`, `eslint --max-warnings=0` on changed files,
+`vite build` (708 kB single file). Not yet done: audit P0-3 (zero tests on `api.ts`).
+
+---
+
 ## 2026-09-07 — Motion polish pass (8 animation plans executed)
 
 Full improve-animations audit + execution. All motion remains GPU-only
