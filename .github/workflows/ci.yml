@@ -17,6 +17,23 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Ship-no-secrets guard: a committed .env (or a data dump) in a health-record
+      # repo is a breach waiting to happen, and it is cheap to make impossible.
+      - name: No committed env files or data dumps
+        run: |
+          set -euo pipefail
+          if git ls-files | grep -E '^\.env$|^\.env\.(local|production|dev)$'; then
+            echo "::error::A real .env is tracked. Only .env.example and .env.demo may be committed."
+            exit 1
+          fi
+          if git ls-files | grep -Ei '(patient[-_]?export|phi|real[-_]?data)\.(json|csv|sql)'; then
+            echo "::error::A file that looks like a patient data export is tracked."
+            exit 1
+          fi
+      # Supply-chain report. Advisory fixes that require a major-version bump are a
+      # human decision, so this annotates rather than blocks the whole pipeline.
+      - name: Dependency audit (report)
+        run: npm audit --audit-level=high || echo "::warning::npm audit reported high/critical advisories — see the log; schedule the upgrade."
       - run: npm run typecheck
       # --max-warnings=0 makes every warning blocking — that is the point. The
       # LabResults stale-closure bug (useMemo with [] deps over `patients`) sat
@@ -26,4 +43,7 @@ jobs:
       # remaining warnings once contexts live in their own files.
       - run: npx eslint . --max-warnings=0 --rule '{"react-refresh/only-export-components":"off"}'
       - run: npm test
+      # Both artifacts are verified: the default build is production mode (must
+      # fail closed without a backend) and the demo build is what clinics preview.
       - run: npm run build
+      - run: npm run build:demo

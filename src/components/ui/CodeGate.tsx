@@ -24,7 +24,7 @@ export function CodeGate({ pageKey, page, testId }: { pageKey: string; page: str
             <h2 className="text-base font-bold text-slate-900">Doctor access only</h2>
           </div>
           <p className="text-xs text-slate-500">
-            {page} is encrypted and can only be opened with a doctor's personal code. Ask a doctor to review it with you.
+            {page} is access-restricted and opens only with a doctor's personal code. Ask a doctor to review it with you.
           </p>
         </Card>
       </div>

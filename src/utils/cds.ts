@@ -1,5 +1,4 @@
-import type { OrderType } from "../types";
-import { patients } from "../data/mockData";
+import type { OrderType, Patient } from "../types";
 
 export interface DraftOrder {
   id: string;
@@ -50,9 +49,15 @@ function matchesTrigger(nameLower: string, triggers: string[]): boolean {
   });
 }
 
+/**
+ * The record CDS evaluates against. The CALLER supplies it (from the loaded
+ * patient) — this module must never look a patient up itself, or interaction
+ * checking silently runs against the wrong chart.
+ */
+export type CdsPatientContext = Pick<Patient, "allergies" | "medications" | "labs">;
+
 // Clinical Decision Support — flags risks for the selected patient
-export function runCDS(patientId: string, draft: DraftOrder): CDSFinding[] {
-  const patient = patients.find((p) => p.id === patientId);
+export function runCDS(patient: CdsPatientContext | null | undefined, draft: DraftOrder): CDSFinding[] {
   if (!patient) return [];
   const findings: CDSFinding[] = [];
   const name = draft.name.toLowerCase();

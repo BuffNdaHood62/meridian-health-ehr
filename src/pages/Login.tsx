@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useLocation, Link } from "react-router-dom";
 import { ShieldCheck, Activity, HeartPulse, Fingerprint, Lock } from "lucide-react";
 import { useAuth } from "../auth";
+import { DEMO_MODE } from "../config";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -77,7 +78,10 @@ export default function Login() {
         </div>
 
         <div className="relative flex items-center gap-2 text-sm text-brand-100">
-          <ShieldCheck className="h-4 w-4" /> SOC 2 Type II · HITRUST Certified · 256-bit encryption
+          <ShieldCheck className="h-4 w-4" />
+          {DEMO_MODE
+            ? "Demo workspace · sample records only"
+            : "Named accounts · role-based access · activity audited"}
         </div>
       </div>
 

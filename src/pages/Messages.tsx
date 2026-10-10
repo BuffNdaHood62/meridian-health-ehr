@@ -156,7 +156,7 @@ export default function Messages() {
       {loading && <p className="mb-4 text-sm text-slate-500">Loading messages…</p>}
       <PageHeader
         title="Secure Messages"
-        subtitle="Encrypted clinical communications between care team members."
+        subtitle="Care-team messages, visible only to signed-in members."
         actions={
           <button
             onClick={() => startCompose()}
@@ -259,7 +259,7 @@ export default function Messages() {
       </div>
 
       <p className="mt-4 text-center text-xs text-slate-500">
-        <span className="font-semibold text-slate-500">{unreadCount} unread</span> · Messages are encrypted end-to-end and audited per HIPAA policy
+        <span className="font-semibold text-slate-500">{unreadCount} unread</span> · Sent inside your care-team workspace — do not paste client details into external email
       </p>
 
       {/* ---- Reading popup (replaces the old side-by-side pane) ---- */}
@@ -314,7 +314,7 @@ export default function Messages() {
         open={composeOpen}
         onClose={closeCompose}
         title="New secure message"
-        description="Encrypted and audited per HIPAA policy"
+        description="Delivered to named care-team members in this workspace"
         size="lg"
       >
         <div className="space-y-4 px-5 py-5">

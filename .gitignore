@@ -20,6 +20,9 @@ npm-debug.log*
 .env
 .env.*
 !.env.example
+# The demo-mode file carries no secrets, only VITE_APP_MODE=demo; it must be
+# committed or `npm run build:demo` silently produces a production-mode bundle.
+!.env.demo
 
 # Supabase local CLI artifacts
 supabase/.temp/

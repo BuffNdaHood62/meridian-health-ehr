@@ -11,7 +11,7 @@ import { isSupabaseConfigured, supabase } from "../lib/supabase";
 export interface AuditEntry {
   id: string;
   actorId: string;
-  action: "create" | "update" | "delete" | "unlock" | "sign" | "administer";
+  action: "create" | "update" | "delete" | "unlock" | "sign" | "administer" | "export" | "read";
   entity: string;
   entityId: string;
   detail?: string;

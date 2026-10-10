@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
-import { supabase, isSupabaseConfigured } from "../lib/supabase";
+import { supabase, isSupabaseConfigured, requireBackend } from "../lib/supabase";
 import { patients as mockPatients, messages as mockMessages, orders as mockOrders, alerts as mockAlerts, appointments as mockAppointments } from "./mockData";
 import type { Patient, Message, OrderItem, Alert, Appointment } from "../types";
 
 // ============================================================================
 // Async data layer. Returns the EXISTING domain types so page render code is
 // untouched. When Supabase is configured we query + assemble; otherwise we
-// resolve the mock arrays (so the app runs with zero backend). One swap point.
+// resolve the mock arrays (so the app runs with zero backend) — but ONLY in demo
+// mode. See demoFallback(): a production build never answers with fake data.
 // ============================================================================
+
+/**
+ * Gate for every `return mock…` branch below.
+ * Returns true when the fake-data fallback is legal; throws when a production
+ * build has no backend, because silently serving invented patients on a clinical
+ * screen is a patient-safety failure, not a graceful degradation.
+ */
+function demoFallback(context: string): boolean {
+  if (isSupabaseConfigured) return false;
+  requireBackend(context); // throws in production mode
+  return true;
+}
 
 // ---- assembly: child rows -> nested arrays on the Patient shape ----
 
@@ -116,7 +129,7 @@ async function fetchChildRows(patientId?: string): Promise<ChildRow[]> {
 export async function loadPatients(): Promise<Patient[]> {
   // Spec 2026-09-28: MRNs should read in ascending order everywhere clients are listed.
   const byMrn = (a: Patient, b: Patient) => a.mrn.localeCompare(b.mrn);
-  if (!isSupabaseConfigured) return [...mockPatients].sort(byMrn);
+  if (demoFallback("loadPatients")) return [...mockPatients].sort(byMrn);
   const { data: ps, error } = await supabase.from("patients").select("*");
   ensure(error, "Failed to load patients");
   const children = await fetchChildRows();
@@ -125,7 +138,7 @@ export async function loadPatients(): Promise<Patient[]> {
 
 // Single-patient fetch: queries scoped by id instead of load-all-then-filter.
 export async function loadPatient(id: string): Promise<Patient | null> {
-  if (!isSupabaseConfigured) return mockPatients.find((p) => p.id === id) ?? null;
+  if (demoFallback("loadPatient")) return mockPatients.find((p) => p.id === id) ?? null;
   const { data: p, error } = await supabase.from("patients").select("*").eq("id", id).maybeSingle();
   ensure(error, "Failed to load patient");
   if (!p) return null;
@@ -134,7 +147,7 @@ export async function loadPatient(id: string): Promise<Patient | null> {
 }
 
 export async function loadMessages(): Promise<Message[]> {
-  if (!isSupabaseConfigured) return mockMessages;
+  if (demoFallback("loadMessages")) return mockMessages;
   // sender embed: from_profile -> profiles.full_name gives a displayable name.
   const { data, error } = await supabase
     .from("messages")
@@ -160,7 +173,7 @@ export async function loadMessages(): Promise<Message[]> {
 // Persist a composed message. Returns "" on success or an error message.
 // Demo mode returns "" without writing (caller keeps its in-memory prepend).
 export async function sendMessage(msg: Message): Promise<string> {
-  if (!isSupabaseConfigured) return "";
+  if (demoFallback("sendMessage")) return "";
   const user = (await supabase.auth.getUser()).data.user;
   if (!user) return "Not signed in.";
   // messages.org_id is NOT NULL and RLS with-check compares it to the sender's
@@ -186,7 +199,7 @@ export async function sendMessage(msg: Message): Promise<string> {
 }
 
 export async function loadOrders(patientId: string): Promise<OrderItem[]> {
-  if (!isSupabaseConfigured) return mockOrders.filter((o) => o.patientId === patientId);
+  if (demoFallback("loadOrders")) return mockOrders.filter((o) => o.patientId === patientId);
   const { data, error } = await supabase.from("orders").select("*").eq("patient_id", patientId);
   ensure(error, "Failed to load orders");
   return (data ?? []).map((o) => ({
@@ -205,7 +218,7 @@ export async function loadOrders(patientId: string): Promise<OrderItem[]> {
 }
 
 export async function saveOrder(order: OrderItem): Promise<void> {
-  if (!isSupabaseConfigured) return; // demo: in-memory only
+  if (demoFallback("saveOrder")) return; // demo: in-memory only
   const { error } = await supabase.from("orders").insert({
     id: order.id,
     patient_id: order.patientId,
@@ -222,7 +235,7 @@ export async function saveOrder(order: OrderItem): Promise<void> {
 }
 
 export async function loadAlerts(): Promise<Alert[]> {
-  if (!isSupabaseConfigured) return mockAlerts;
+  if (demoFallback("loadAlerts")) return mockAlerts;
   const { data, error } = await supabase.from("alerts").select("*"); // ponytail: alerts table assumed; seed separately
   ensure(error, "Failed to load alerts");
   return (data ?? []).map((a) => ({
@@ -233,7 +246,7 @@ export async function loadAlerts(): Promise<Alert[]> {
 }
 
 export async function loadAppointments(): Promise<Appointment[]> {
-  if (!isSupabaseConfigured) return mockAppointments;
+  if (demoFallback("loadAppointments")) return mockAppointments;
   const { data, error } = await supabase.from("appointments").select("*");
   ensure(error, "Failed to load appointments");
   return (data ?? []).map((a) => ({

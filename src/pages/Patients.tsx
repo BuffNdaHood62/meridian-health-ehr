@@ -6,7 +6,8 @@ import { Badge } from "../components/ui/Badge";
 import { Modal } from "../components/ui/Modal";
 import { ErrorNote } from "../components/ui/ErrorNote";
 import { WWW_AGE_BANDS, type WwwAgeBand, type WwwStatus, type WwwVisitEntry } from "../types";
-import { ensureSeeded, addEntry, groupClients, nextWwwNumber, wwwNumberForClient, clientRecordText } from "../utils/wwwRecords";
+import { ensureSeeded, addEntry, groupClients, nextWwwNumber, wwwNumberForClient } from "../utils/wwwRecords";
+import { printClientRecord, emailClientRecord } from "../utils/recordExport";
 import { findDemographics, ageBandFromDob } from "../utils/demographics";
 
 const inputCls =
@@ -25,28 +26,7 @@ function visitDate(e: WwwVisitEntry): string {
   return new Date(e.visitAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-// Open a plain print sheet for one immutable visit record.
-function printRecord(e: WwwVisitEntry) {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const w = window.open("", "_blank", "width=720,height=900");
-  if (!w) return;
-  w.document.write(
-    `<!doctype html><html><head><title>WWW ${esc(e.wwwNumber)} — ${esc(e.clientName)}</title></head>` +
-    `<body style="font-family:system-ui,sans-serif;padding:32px">` +
-    `<h2 style="margin:0 0 4px">Wellness with Writingale EMR — Client Record</h2>` +
-    `<p style="margin:0 0 16px;color:#555">Generated ${esc(new Date().toLocaleString())}</p>` +
-    `<pre style="white-space:pre-wrap;font:14px/1.6 system-ui,sans-serif">${esc(clientRecordText(e))}</pre>` +
-    `</body></html>`
-  );
-  w.document.close();
-  w.focus();
-  w.print();
-}
-
-function emailRecord(e: WwwVisitEntry) {
-  const body = encodeURIComponent(`${clientRecordText(e)}\n\n— Sent from Wellness with Writingale EMR`);
-  window.location.href = `mailto:?subject=${encodeURIComponent(`WWW client record ${e.wwwNumber} — ${e.clientName}`)}&body=${body}`;
-}
+// Record export lives in src/utils/recordExport.ts (DOM-built, watermarked, audited).
 
 interface DraftState {
   clientName: string;
@@ -169,6 +149,32 @@ export default function Patients() {
   const [showForm, setShowForm] = useState(false);
   const [prefill, setPrefill] = useState<DraftState>(emptyDraft);
   const [formError, setFormError] = useState("");
+  // Export is a disclosure: the email path needs an explicit authorization tick,
+  // and both paths surface the audit consequence in-band.
+  const [emailTarget, setEmailTarget] = useState<WwwVisitEntry | null>(null);
+  const [exportAck, setExportAck] = useState(false);
+  const [exportNotice, setExportNotice] = useState("");
+
+  const printVisit = (v: WwwVisitEntry) => {
+    setExportNotice(
+      printClientRecord(v)
+        ? "Record sent to the printer. This disclosure is recorded in the audit log."
+        : "Your browser blocked the print window — allow pop-ups for this site, then try again."
+    );
+  };
+
+  const openEmail = (v: WwwVisitEntry) => {
+    setExportAck(false);
+    setExportNotice("");
+    setEmailTarget(v);
+  };
+
+  const confirmEmail = () => {
+    if (!emailTarget || !exportAck) return;
+    emailClientRecord(emailTarget);
+    setExportNotice(`Email draft opened for WWW ${emailTarget.wwwNumber}. Sending it discloses client information outside the EMR; the disclosure is recorded in the audit log.`);
+    setEmailTarget(null);
+  };
 
   const clients = useMemo(() => groupClients(entries), [entries]);
   const admitted = clients.filter((c) => c.latest.status === "Admitted").length;
@@ -291,6 +297,12 @@ export default function Patients() {
         </div>
       </Card>
 
+      {exportNotice && (
+        <p role="status" data-testid="www-export-notice" className="mb-4 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200">
+          {exportNotice}
+        </p>
+      )}
+
       <Card className="overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -316,6 +328,8 @@ export default function Patients() {
                   expanded={expanded === c.wwwNumber}
                   onToggle={() => setExpanded((v) => (v === c.wwwNumber ? null : c.wwwNumber))}
                   onNewVisit={() => openVisitFor(c.clientName)}
+                  onPrint={printVisit}
+                  onEmail={openEmail}
                 />
               ))}
             </tbody>
@@ -333,18 +347,62 @@ export default function Patients() {
         {formError && <ErrorNote message={formError} testId="www-form-error" />}
         <EntryForm initial={prefill} assignedNumber={draftNumber} onSave={saveEntry} onCancel={() => setShowForm(false)} />
       </Modal>
+
+      <Modal
+        open={emailTarget != null}
+        onClose={() => setEmailTarget(null)}
+        title="Disclose this record by email"
+        description="Email leaves the EMR. Confirm the recipient before the draft opens."
+      >
+        {emailTarget && (
+          <div className="space-y-4" data-testid="www-email-consent">
+            <p className="text-sm text-slate-600">
+              <strong>WWW {emailTarget.wwwNumber}</strong> — {emailTarget.clientName}, visit of {visitDate(emailTarget)}.
+              The full record (complaints, allergies, vitals, biography) will be placed into an email draft.
+            </p>
+            <label className="flex items-start gap-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 ring-1 ring-slate-200">
+              <input
+                type="checkbox"
+                checked={exportAck}
+                onChange={(e) => setExportAck(e.target.checked)}
+                data-testid="www-email-ack"
+                className="mt-0.5 h-4 w-4 shrink-0"
+              />
+              <span>The recipient is authorized to receive this client record, and email is an agreed channel for it.</span>
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={confirmEmail}
+                disabled={!exportAck}
+                data-testid="www-email-confirm"
+                className="rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                Open email draft
+              </button>
+              <button
+                onClick={() => setEmailTarget(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
 
 function FragmentRow({
-  client, entries, expanded, onToggle, onNewVisit,
+  client, entries, expanded, onToggle, onNewVisit, onPrint, onEmail,
 }: {
   client: { wwwNumber: string; clientName: string; latest: WwwVisitEntry; visits: number };
   entries: WwwVisitEntry[];
   expanded: boolean;
   onToggle: () => void;
   onNewVisit: () => void;
+  onPrint: (v: WwwVisitEntry) => void;
+  onEmail: (v: WwwVisitEntry) => void;
 }) {
   const visits = entries
     .filter((e) => e.wwwNumber === client.wwwNumber)
@@ -387,10 +445,10 @@ function FragmentRow({
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-slate-900">Visit · {visitDate(v)}</p>
                     <div className="flex gap-1.5">
-                      <button onClick={() => printRecord(v)} data-testid={`www-print-${v.id}`} aria-label="Print record" className="tappable rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+                      <button onClick={() => onPrint(v)} data-testid={`www-print-${v.id}`} aria-label="Print record" className="tappable rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
                         <Printer className="h-4 w-4" />
                       </button>
-                      <button onClick={() => emailRecord(v)} data-testid={`www-email-${v.id}`} aria-label="Send by email" className="tappable rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
+                      <button onClick={() => onEmail(v)} data-testid={`www-email-${v.id}`} aria-label="Send by email" className="tappable rounded-lg p-1.5 text-slate-500 hover:bg-slate-100">
                         <Mail className="h-4 w-4" />
                       </button>
                     </div>

@@ -27,5 +27,25 @@ export default tseslint.config(
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
     },
+  },
+  {
+    // Boundary: pure logic must never resolve a clinical record for itself.
+    // runCDS() used to import the mock patient set, so with a real backend live
+    // it kept judging interactions against the wrong chart — silently.
+    files: ["src/utils/**/*.ts"],
+    ignores: ["src/utils/**/*.test.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/data/mockData", "**/data/mockData.ts"],
+              message: "Utils receive data from callers. Importing the demo record set breaks backend mode.",
+            },
+          ],
+        },
+      ],
+    },
   }
 );

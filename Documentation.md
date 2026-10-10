@@ -4,6 +4,129 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-10-09 — Production transition, Phase 0/1: fail closed, honest claims, server-side registry
+
+Acting on the production-readiness plan. Everything here is code/config/SQL in this
+repo; the phases that need cloud accounts, vendors and clinical sign-off are tracked
+in `docs/risk-register.md` and are **not** done.
+
+### 1. The build can no longer fake being a clinic (R-01/R-02)
+`isSupabaseConfigured ? backend : mockData` meant a production bundle built without
+env vars served 12 invented patients — and logged in through the no-credential demo
+provider. Now:
+- **`src/env.ts`** resolves `VITE_APP_MODE` (`demo` | `production`): explicit value
+  wins, else `vite dev` → demo, `vite build` → production. Unset in a build is the
+  fail-closed default; an unrecognized value (`staging`, `DEMO`) does not grant
+  demo.
+- **`src/main.tsx`** renders `src/components/StartupBlocked.tsx` and never mounts
+  the clinical UI when `runtimeProblems()` is non-empty.
+- **`src/data/api.ts`** routes all 8 fake-data branches through `demoFallback()`,
+  which calls `requireBackend(context)` and throws in production mode. Two
+  independent layers: the app won't boot, and a reached call still refuses.
+- **`src/config.ts`**: `DEMO_MODE` is derived from the mode, no longer a hand-edited
+  literal. `SUPPORT_EMAIL`/`SUPPORT_PHONE` read env (placeholders remain until the
+  foundation supplies real details).
+- **Breaking for habits**: `npm run build` is production mode. The demo artifact is
+  `npm run build:demo` (`--mode demo` + committed `.env.demo`, which `.gitignore` now
+  un-ignores deliberately). CI builds both.
+- `.env.example` restored (it had been deleted at `a403fe3` while `supabase.ts` still
+  told operators to read it), documenting that `VITE_` values ship in the bundle.
+
+### 2. False security claims removed (R-03)
+The UI asserted controls that do not exist. Login said **"SOC 2 Type II · HITRUST
+Certified · 256-bit encryption"**; Messages said **"encrypted end-to-end and audited
+per HIPAA policy"** (in three places); the sidebar said **"HIPAA Secure Session ·
+Encrypted"**; `CodeGate` called the screens **"encrypted"**. All replaced with
+accurate copy (login is mode-aware: demo says "sample records only"). A doctor code
+in `localStorage` gates a *view*; it never protected the *data* — see
+`docs/adr/0002-codegate-is-not-encryption.md`.
+
+### 3. CDS was judging the wrong chart (R-11, patient-safety fix)
+`runCDS(patientId, draft)` looked the patient up in `src/data/mockData`, so with a
+real backend configured, allergy/interaction findings were computed from a hardcoded
+demo patient rather than the loaded chart. `src/utils/cds.ts` now takes
+`CdsPatientContext = Pick<Patient,"allergies"|"medications"|"labs">` from the caller;
+`Orders.tsx` passes the loaded `patient` (memo deps `[cart, patient]`, so a
+background refresh re-evaluates). `src/utils/cds.test.ts` updated; the
+unknown-patient case is now "caller has no loaded patient → no findings".
+
+### 4. Record export is a disclosure, so it behaves like one (R-07)
+`src/pages/Patients.tsx` built print sheets with `document.write` over an
+interpolated HTML string — PHI (complaints, names, allergies) was parsed as markup in
+a second window — and neither print nor email left a trace. New
+**`src/utils/recordExport.ts`** (+ `src/utils/dom.ts`):
+- DOM nodes with `textContent` only; `style` values are static literals.
+- Provenance header (generated-at, source) plus a **"DEMO DATA — NOT A REAL PATIENT
+  RECORD"** watermark while in demo mode, so a stray sheet can't pass as clinical.
+- Both paths `appendAudit("export", …)`; `src/utils/audit.ts` action union gains
+  `export` and `read`.
+- Email requires an explicit authorization tick ("recipient is authorized to receive
+  this record") before the draft opens, and the UI states the audit consequence.
+- Blocked popups now report back instead of printing nothing silently.
+Kept as-is deliberately: the record still enters the `mailto:` body — the clinic's
+requested workflow — because email is the only transfer channel that exists today.
+Phase 3 replaces it with the expiring share link.
+
+### 5. Identity display (R-14 partial)
+`Sidebar.tsx` fell back to the mock `currentUser` (Dr. Sarah Chen) and called
+`useAuth()` three times inside JSX. It now renders the signed-in user only, with an
+honest "Not signed in" state, and no longer imports the demo record set.
+
+### 6. Server-side registry + access hardening (R-04/05/06/08)
+New **`supabase/migrations/0007_www_registry_and_access_hardening.sql`** — 96
+statements, syntax-verified with libpg_query, **not applied** (no Postgres/Docker/
+supabase CLI in this environment):
+- `www_clients` (normalized `client_key` generated column), `www_client_visits`
+  (typed vital columns with range CHECKs matching the UI, `biography` snapshot jsonb,
+  `supersedes_id` as the correction path), `www_client_demographics`,
+  `medical_reviews`, `order_administrations` (event rows, never updated).
+- `register_www_client()` allocates 001-999 from a **row-locked per-org counter**
+  (`SELECT … FOR UPDATE`) instead of a client-side max+1 scan; exhaustion is a hard
+  error. `record_client_visit()` / `record_medical_review()` keep the invariants in
+  one transaction, so a saved review cannot exist without landing on the register.
+- `forbid_mutation()` triggers make the registry, reviews, administrations and
+  `audit_log` append-only; `forbid_order_content_rewrite()` stops a signed order's
+  clinical content changing under the signature while status/administration move.
+- `role_allows(entity, action)` replaces 0004's `role_can()` (which ignored the
+  action and used `for all` policies, so any org member could update/delete PHI):
+  per-action select/insert/update policies, nurses cannot author orders, lab cannot
+  read notes, reception cannot read labs, **no role has DELETE**, `revoke delete,
+  truncate, references` from `anon`/`authenticated`.
+- Audit rows hash the previous row (`prev_hash`/`row_hash`, SHA-256 under an advisory
+  lock) so editing history breaks the chain.
+`usage on schema public` stays with `anon` on purpose — anonymous share links redeem
+through the 0002 `security definer` RPC.
+
+### 7. CI + boundary (R-10)
+`.github/workflows/ci.yml` gains: a committed-`.env`/data-dump guard, a reporting
+`npm audit --audit-level=high` step, and a `npm run build:demo` step alongside the
+production build. `eslint.config.js` gains a `no-restricted-imports` block so nothing
+in `src/utils/**` can import `data/mockData` again. `npm audit fix` cleared 3
+advisories; **6 remain (2 critical) behind a vitest 3→5 major** — a dependency
+decision for the owner, not something to silently upgrade under a working clinical
+repo.
+
+### Verification (2026-10-09)
+- `npx vitest run` → **45 passed / 6 files** (new `src/env.test.ts` covers the mode
+  matrix and the fail-closed branch).
+- `npx eslint . --max-warnings=0 --rule react-refresh:off` → **exit 0** (same command
+  CI runs).
+- `npx tsc --noEmit -p .` → **exit 0**; `npm run build` and `npm run build:demo` →
+  **both exit 0**, 740 kB single file / 207 kB gzip.
+- `0007_*.sql` → parsed clean by `pglast` (real Postgres grammar). PL/pgSQL bodies are
+  not parser-checked; apply on staging and run the RLS matrix notes at the file end.
+- Migration 0007 is unexecuted, and no client code writes to the new tables yet — the
+  app's registry path is still `wwwRecords.ts` in demo mode. That is the Phase 2
+  wiring task, not a completed item.
+
+### Still blocked on inputs outside the repo
+Foundation logo asset; real `SUPPORT_EMAIL`/`SUPPORT_PHONE`; Supabase project +
+KMS + backup/DR configuration; BAA/DPA with vendors; MFA enablement; clinician
+sign-off of the CDS ruleset; NDPA DPIA. Until those and R-04/05/06/08/13/14 close,
+**this build must not hold real patient records** — see `docs/risk-register.md`.
+
+---
+
 ## 2026-09-28 — Refinement pass: per-page encryption, demographics record, review→Clients, appointments
 
 Second client-feedback list (17 items) received 2026-09-28.

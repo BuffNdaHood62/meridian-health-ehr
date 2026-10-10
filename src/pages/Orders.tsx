@@ -69,10 +69,12 @@ function OrdersInner({ readOnly = false }: { readOnly?: boolean }) {
     setAudit(listAudit());
   };
 
-  // Single CDS evaluation per cart item, keyed by draft id — reused by rows below
+  // Single CDS evaluation per cart item, keyed by draft id — reused by rows below.
+  // Passes the LOADED patient: runCDS no longer resolves a chart itself, so a
+  // background refresh re-runs the rules against fresh allergies/labs.
   const cdsByDraft = useMemo(
-    () => new Map(cart.map((d) => [d.id, runCDS(effectivePatientId ?? "", d)])),
-    [cart, effectivePatientId]
+    () => new Map(cart.map((d) => [d.id, runCDS(patient, d)])),
+    [cart, patient]
   );
   const cdsResults = useMemo(() => [...cdsByDraft.values()].flat(), [cdsByDraft]);
   const hasBlock = cdsResults.some((r) => r.level === "danger");

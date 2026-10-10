@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { LogOut, ShieldCheck, X, UserPlus } from "lucide-react";
 import { navItems } from "./nav";
-import { currentUser } from "../../data/mockData";
 import { useAuth } from "../../auth";
 import { Avatar } from "../ui/Avatar";
 import { WwwLogo } from "../ui/WwwLogo";
@@ -16,7 +15,7 @@ function isActive(to: string, match: ((p: string) => boolean) | undefined, pathn
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, currentUser } = useAuth();
 
   // Escape closes the mobile drawer
   useEffect(() => {
@@ -108,8 +107,8 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           <div className="flex items-start gap-2.5 rounded-xl bg-emerald-50 px-3 py-2.5 ring-1 ring-emerald-100">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
             <div>
-              <p className="text-[11px] font-semibold text-emerald-800">HIPAA Secure Session</p>
-              <p className="text-[10px] leading-tight text-emerald-600">Encrypted · no idle auto-lock</p>
+              <p className="text-[11px] font-semibold text-emerald-800">Restricted views</p>
+              <p className="text-[10px] leading-tight text-emerald-600">Doctor code per screen · no idle auto-lock — sign out on shared devices</p>
             </div>
           </div>
 
@@ -120,10 +119,10 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
             }}
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-slate-50"
           >
-            <Avatar initials={(useAuth().currentUser?.initials) ?? currentUser.initials} color="#13726c" size="sm" />
+            <Avatar initials={currentUser?.initials ?? "—"} color="#13726c" size="sm" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-slate-900">{(useAuth().currentUser?.name) ?? currentUser.name}</p>
-              <p className="truncate text-xs text-slate-500">{useAuth().currentUser?.id ?? currentUser.id}</p>
+              <p className="truncate text-sm font-semibold text-slate-900">{currentUser?.name ?? "Not signed in"}</p>
+              <p className="truncate text-xs text-slate-500">{currentUser?.id ?? "—"}</p>
             </div>
           </button>
 
