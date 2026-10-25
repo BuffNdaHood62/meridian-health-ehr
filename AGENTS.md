@@ -14,6 +14,8 @@ Tech stack pins: React 19, Vite 7 (+ vite-plugin-singlefile), TypeScript 5.9, Ta
 - `npm run build` = **production mode**: no backend env ⇒ the app refuses to boot (`StartupBlocked`) and `src/data/api.ts` throws rather than serving `mockData`. Never "fix" that by re-adding a mock fallback.
 - `npm run build:demo` = demo artifact (fake data + banner + watermarked prints). This is what clinics preview.
 - `.env.demo` is committed on purpose (no secrets); `.env.example` is the real contract.
+- Gates key on the **mode**, never on "is a backend configured" — a demo build has no backend either. `demoFallback()` in `src/data/api.ts` is the canonical shape; `src/data/api.test.ts` is the regression guard for it.
+- `vercel.json` pins the deployed site to `npm run build:demo`. At go-live, change or delete it — a pinned demo build serves fake data on a real clinical URL, and the fail-closed default in `npm run build` is what protects a production deploy.
 
 ## Global Work Rules
 - Shortest working diff wins. No speculative abstractions.
@@ -28,6 +30,7 @@ Tech stack pins: React 19, Vite 7 (+ vite-plugin-singlefile), TypeScript 5.9, Ta
 - `npm run lint`, `npm run typecheck` — see Local Environment caveats.
 - `npm run build` AND `npm run build:demo` — both must pass before shipping (CI runs both).
 - `npm run audit` — dependency advisories (6 open, 2 critical, all build-toolchain; see risk register R-10).
+- **Before claiming a data-layer or screen-level change works, load `dist/index.html` in a browser and look at the dashboard.** Tests, `tsc` and lint do not execute `src/data/api.ts` — the broken demo fallback passed all three. Check the built artifact, not the dev server: only `dist/` carries the mode resolution.
 
 ## Architecture (high level)
 - `src/App.tsx` — all routes, HashRouter, `RequireAuth` wraps the app layout.

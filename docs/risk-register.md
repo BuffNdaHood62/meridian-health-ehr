@@ -38,6 +38,7 @@ notification) on the NDPA track.
 | R-13 | PHI residue already on clinic browsers from demo use | Any device that ran the demo | Export → validate → import script, then clear `www-*` stores; document as a migration-window task, not a code change | **Open** |
 | R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `Sidebar.tsx` footer states it plainly | Named accounts + TOTP/WebAuthn + server-side session expiry (Phase 1 remainder) | **Open** |
 | R-15 | No backups, no DR runbook, no monitoring, no CSP | infrastructure, none in repo | Phase 3/4: PITR + quarterly restore rehearsal, IaC, PHI-redacting log sink, Sentry, CSP after retiring `vite-plugin-singlefile` | **Open** |
+| R-16 | The verification gates did not execute the data layer: `demoFallback()` threw in the *demo* artifact (gated on backend presence, not mode) while tests/typecheck/lint all passed, and unbacked security copy survived on the desktop-only Login panel | `src/data/api.ts`, `src/data/api.test.ts`, root AGENTS.md Verification | Fixed 2026-10-20: gate keys on `DEMO_DATA_ALLOWED`; `api.test.ts` asserts loaders resolve; a standing rule requires loading built `dist/index.html` in a browser before claiming a screen works | **Closed (2026-10-20)** |
 
 ## What the app still must not do
 
@@ -60,3 +61,16 @@ mistaken for a clinical document.
   parser and the migration has **not** been executed — no Postgres, Supabase CLI
   or Docker is available in this environment. Applying it to staging is the next
   gate, and the RLS matrix assertions at the foot of the file must run there.
+
+## Phase acceptance evidence (2026-10-20)
+
+- Browser verification of the built demo artifact (`dist/index.html` from
+  `npm run build:demo`), which is what R-16 was missing: app boots, demo banner
+  renders, dashboard KPIs populate from the fixture, Messages renders, Orders still
+  shows the doctor-code gate, Settings shows live audit counts.
+- Asserted absent from the rendered DOM: `HIPAA`, `SOC 2`, `audited`, `encrypted`,
+  `12,000`, `trusted by`, `3 devices`, the fabricated `10.42.18.6` session IP.
+- `npx vitest run` — 48 passed / 7 files (adds `src/data/api.test.ts`).
+- `npm run build` (production) still refuses to boot without a backend — the
+  behaviour the live site displayed, and the reason `vercel.json` now declares the
+  demo mode explicitly instead of leaving it to the default.

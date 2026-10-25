@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ShieldCheck, Lock, UserPlus, Check } from "lucide-react";
 import { useAuth } from "../auth";
 import { ROLE_ROUTES, type Role } from "../users";
+import { DEMO_MODE } from "../config";
 
 const ROLES: Role[] = ["doctor", "nurse", "reception", "admin", "lab"];
 
@@ -144,7 +145,10 @@ export default function Signup() {
         </p>
 
         <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-          <Lock className="h-3 w-3" /> <ShieldCheck className="h-3 w-3" /> Authorized personnel only · All access logged & audited
+          <Lock className="h-3 w-3" /> <ShieldCheck className="h-3 w-3" />
+          {DEMO_MODE
+            ? "Demo workspace · this account is stored in your browser only"
+            : "Authorized personnel only · Activity logged"}
         </p>
       </div>
     </div>

@@ -4,6 +4,44 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-10-20 — Live demo deployment broke; two defects found and fixed
+
+The Vercel site started rendering "Application not started" after `f94e65f` landed.
+That screen is correct behaviour for the artifact Vercel was building, and behind it
+was a second, genuine bug.
+
+### 1. `demoFallback()` gated on the wrong thing (R-16)
+It called `requireBackend(context)` whenever no backend was configured — but a
+**demo** build has no backend either, so all eight loaders in `src/data/api.ts`
+rejected in the demo artifact. The dashboard showed `[loadPatients] No backend
+configured…` and zeroed KPIs. Fixed by keying on the mode:
+`if (isSupabaseConfigured) return false; if (DEMO_DATA_ALLOWED) return true; requireBackend(…)`.
+`src/data/api.test.ts` is new and asserts the loaders resolve to the fixture —
+45/45 tests passed before this fix because nothing exercised `api.ts`; now 48/48.
+
+### 2. The deployment had no declared mode
+No `vercel.json` existed, so Vercel ran the default `npm run build` → production →
+correct refusal. `vercel.json` now pins `buildCommand: npm run build:demo`, with the
+go-live instruction recorded next to it in root `AGENTS.md`.
+
+### 3. Claims that survived the first honest-copy pass
+The Login marketing panel is `hidden lg:flex`, so it was invisible to the earlier
+narrow-viewport check and kept: "trusted by 12,000+ providers", "HIPAA-compliant
+access", "Real-time vitals", "Sign in securely", "All access logged & audited"
+(Login + Signup), "Share record securely" (ShareActions), and Settings' "logged in
+accordance with HIPAA" over four fabricated numbers ("Session IP 10.42.18.6",
+"Records viewed (24h) 47"). All replaced with mode-aware, mechanism-backed copy;
+Settings' Activity Log now counts real `listAudit()` entries, and 2FA / biometric /
+trusted-devices show `Not in this build` instead of inert toggles.
+
+Verified in a browser against the built `dist/index.html`: demo mode boots, banner
+renders, dashboard KPIs populate (4 clients, 8 appointments), Messages renders,
+Orders still gates on the doctor code, Settings shows real audit counts, and no
+unbacked claim string appears in the DOM. Production mode still refuses to boot —
+that is the behaviour the live site exhibited today.
+
+---
+
 ## 2026-10-09 — Production transition, Phase 0/1: fail closed, honest claims, server-side registry
 
 Acting on the production-readiness plan. Everything here is code/config/SQL in this

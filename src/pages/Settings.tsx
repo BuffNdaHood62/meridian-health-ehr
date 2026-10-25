@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User, Shield, Bell, Sliders, LogOut, Smartphone, KeyRound, Fingerprint,
@@ -11,6 +11,9 @@ import { Badge } from "../components/ui/Badge";
 import { currentUser } from "../data/mockData";
 import { useAuth } from "../auth";
 import { cn } from "../utils/cn";
+import { listAudit, type AuditEntry } from "../utils/audit";
+import { formatDateTime } from "../utils/format";
+import { DEMO_MODE } from "../config";
 
 // ponytail: live account identity comes from useAuth (the real signed-in user),
 // not the static mockData demo profile. mockData supplies only demo-only meta
@@ -56,8 +59,12 @@ export default function Settings() {
   const role = liveUser?.role ?? currentUser.role;
   const id = liveUser?.id ?? currentUser.id;
   const initials = liveUser?.initials ?? currentUser.initials;
-  const [twoFA, setTwoFA] = useState(true);
-  const [biometric, setBiometric] = useState(false);
+  const auditStats = useMemo(() => {
+    const log = listAudit();
+    const at = (a: AuditEntry["action"]) => log.filter((e) => e.action === a).length;
+    const oldest = log.length ? formatDateTime(log[log.length - 1].at) : "";
+    return { total: log.length, reads: at("read"), signs: at("sign"), exports: at("export"), oldest };
+  }, []);
   const [darkChart, setDarkChart] = useState(false);
   const [emailNotif, setEmailNotif] = useState(true);
   const [msgNotif, setMsgNotif] = useState(true);
@@ -104,14 +111,16 @@ export default function Settings() {
           <Card>
             <CardHeader title="Security & Privacy" subtitle="Authentication and access controls" icon={<Shield className="h-[18px] w-[18px]" />} />
             <div className="divide-y divide-slate-50 px-5">
-              <SettingRow icon={KeyRound} title="Two-factor authentication" desc="Require a code at every sign-in">
-                <Toggle on={twoFA} onChange={() => setTwoFA((v) => !v)} />
+              {/* These three are on the roadmap, not in the build. A toggle that
+                  silently does nothing tells a clinician a control protects them. */}
+              <SettingRow icon={KeyRound} title="Two-factor authentication" desc="Requires a code at every sign-in">
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
-              <SettingRow icon={Fingerprint} title="Biometric login" desc="Use fingerprint or face recognition on supported devices">
-                <Toggle on={biometric} onChange={() => setBiometric((v) => !v)} />
+              <SettingRow icon={Fingerprint} title="Biometric login" desc="Fingerprint or face recognition on supported devices">
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
-              <SettingRow icon={Smartphone} title="Trusted devices" desc="3 devices currently authorized">
-                <button className="text-xs font-semibold text-brand-600 hover:text-brand-700">Manage</button>
+              <SettingRow icon={Smartphone} title="Trusted devices" desc="Per-device authorization and revocation">
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
               <SettingRow icon={Shield} title="Auto-lock session" desc="Sessions stay open until you sign out">
                 <Badge tone="slate" dot>Disabled</Badge>
@@ -159,18 +168,21 @@ export default function Settings() {
             <div className="bg-gradient-to-br from-brand-600 to-brand-800 p-5 text-white">
               <div className="flex items-center gap-2">
                 <Shield className="h-5 w-5" />
-                <p className="text-sm font-semibold">Compliance & Audit</p>
+                <p className="text-sm font-semibold">Activity Log</p>
               </div>
               <p className="mt-2 text-xs text-brand-100">
-                Your access to patient records is logged in accordance with HIPAA. All chart views and orders are attributable and auditable.
+                {DEMO_MODE
+                  ? "Demo mode: events are recorded in this browser only (most recent 500) and are not a compliance audit trail."
+                  : "Chart views, orders and record disclosures are recorded to the audit log."}
               </p>
             </div>
             <div className="space-y-2 p-5">
               {[
-                { label: "Last sign-in", value: "Today, 07:12 AM" },
-                { label: "Session IP", value: "10.42.18.6 (WWW LAN)" },
-                { label: "Records viewed (24h)", value: "47" },
-                { label: "Orders signed (24h)", value: "12" },
+                { label: "Events recorded", value: String(auditStats.total) },
+                { label: "Records viewed", value: String(auditStats.reads) },
+                { label: "Orders signed", value: String(auditStats.signs) },
+                { label: "Records disclosed", value: String(auditStats.exports) },
+                { label: "Oldest entry", value: auditStats.oldest || "None yet" },
               ].map((r) => (
                 <div key={r.label} className="flex items-center justify-between text-xs">
                   <span className="text-slate-500">{r.label}</span>

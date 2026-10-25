@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase, isSupabaseConfigured, requireBackend } from "../lib/supabase";
+import { DEMO_DATA_ALLOWED } from "../env";
 import { patients as mockPatients, messages as mockMessages, orders as mockOrders, alerts as mockAlerts, appointments as mockAppointments } from "./mockData";
 import type { Patient, Message, OrderItem, Alert, Appointment } from "../types";
 
@@ -12,14 +13,17 @@ import type { Patient, Message, OrderItem, Alert, Appointment } from "../types";
 
 /**
  * Gate for every `return mock…` branch below.
- * Returns true when the fake-data fallback is legal; throws when a production
- * build has no backend, because silently serving invented patients on a clinical
- * screen is a patient-safety failure, not a graceful degradation.
+ * Returns true when the fake-data fallback is legal. A production build with no
+ * backend is a mis-deploy, and silently serving invented patients on a clinical
+ * screen is a patient-safety failure, not a graceful degradation — so that case
+ * throws. The check is on the MODE, not on backend presence: a demo build has no
+ * backend either, and must still serve its fixture.
  */
 function demoFallback(context: string): boolean {
   if (isSupabaseConfigured) return false;
-  requireBackend(context); // throws in production mode
-  return true;
+  if (DEMO_DATA_ALLOWED) return true;
+  requireBackend(context); // throws: production mode, no backend
+  return false;
 }
 
 // ---- assembly: child rows -> nested arrays on the Patient shape ----

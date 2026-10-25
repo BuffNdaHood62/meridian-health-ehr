@@ -14,11 +14,13 @@
   ```ts
   function demoFallback(context: string): boolean {
     if (isSupabaseConfigured) return false;
-    requireBackend(context); // throws in production mode
-    return true;
+    if (DEMO_DATA_ALLOWED) return true;
+    requireBackend(context); // throws: production mode, no backend
+    return false;
   }
   ```
-  A production build with no backend is a mis-deploy, and answering its clinical screens with invented patients is a patient-safety failure — so it throws, and `main.tsx` refuses to mount. Do not soften this into a graceful fallback.
+  **The gate is the MODE, not backend presence.** A demo build has no backend either; keying on `requireBackend` alone makes it throw for the right reason in the wrong place — that shipped a broken demo artifact (every loader rejected, dashboard KPIs zeroed) while unit tests stayed green. A production build with no backend is a mis-deploy, and answering its clinical screens with invented patients is a patient-safety failure — so that case throws, and `main.tsx` refuses to mount. Do not soften this into a graceful fallback.
+- `api.test.ts` exists because the failure above was invisible to every other gate: it asserts the loaders actually resolve to the fixture in demo mode. Add a case here whenever you add a loader.
 - Query errors propagate. `ensure(error, what)` throws; a failed read must never resolve to `data ?? []`, because an empty list on a clinical screen is indistinguishable from "no records exist".
 - Assembly keeps the existing `Patient` shape (child rows → nested arrays) so page render code stays backend-agnostic.
 

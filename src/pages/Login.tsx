@@ -58,16 +58,16 @@ export default function Login() {
               One unified chart.<br />Better outcomes.
             </h1>
             <p className="mt-4 max-w-md text-brand-100">
-              The clinical workspace trusted by 12,000+ providers for patient management,
-              physician order entry, and longitudinal medical history.
+              A working EMR front-end: longitudinal charts, physician order entry with
+              safety checks, and a per-visit client registry.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-4 max-w-md">
             {[
-              { icon: Activity, label: "Real-time vitals & labs" },
+              { icon: Activity, label: "Vitals & lab results" },
               { icon: HeartPulse, label: "CPOE with safety checks" },
-              { icon: ShieldCheck, label: "HIPAA-compliant access" },
-              { icon: Fingerprint, label: "Role-based security" },
+              { icon: ShieldCheck, label: "Role-scoped record access" },
+              { icon: Fingerprint, label: "Doctor code per screen" },
             ].map((f) => (
               <div key={f.label} className="flex items-center gap-2.5 rounded-xl bg-white/10 px-3 py-2.5 backdrop-blur">
                 <f.icon className="h-5 w-5 shrink-0 text-brand-100" />
@@ -81,7 +81,7 @@ export default function Login() {
           <ShieldCheck className="h-4 w-4" />
           {DEMO_MODE
             ? "Demo workspace · sample records only"
-            : "Named accounts · role-based access · activity audited"}
+            : "Named accounts · role-scoped access · activity logged"}
         </div>
       </div>
 
@@ -101,7 +101,7 @@ export default function Login() {
           </div>
 
           <h2 className="text-2xl font-bold text-slate-900">Welcome back</h2>
-          <p className="mt-1 text-sm text-slate-500">Sign in to your secure clinical workspace.</p>
+          <p className="mt-1 text-sm text-slate-500">Sign in to your clinical workspace.</p>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4" data-testid="login-form">
             <div>
@@ -141,7 +141,7 @@ export default function Login() {
               data-testid="login-submit"
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-200 transition-colors hover:bg-brand-700 disabled:opacity-70"
             >
-              Sign in securely
+              Sign in
             </button>
           </form>
 
@@ -168,7 +168,10 @@ export default function Login() {
           </p>
 
           <p className="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
-            <Lock className="h-3 w-3" /> Authorized personnel only · Sessions open until sign-out · All access logged & audited
+            <Lock className="h-3 w-3" />
+            {DEMO_MODE
+              ? "Demo workspace · sample records live in this browser only · no server, no real patients"
+              : "Authorized personnel only · Sessions open until sign-out · Activity logged"}
           </p>
         </div>
       </div>
