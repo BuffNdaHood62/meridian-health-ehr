@@ -1,41 +1,231 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Navigate, Outlet, useLocation, useNavigate, Link } from "react-router-dom";
 import { Lock } from "lucide-react";
-import { canAccess, type Role, type WWWUser } from "./users";
+import { canAccess, type WWWUser } from "./users";
 import { isSupabaseConfigured } from "./lib/supabase";
-import { DemoAuthProvider } from "./auth-demo";
-import { SupabaseAuthProvider } from "./auth-supabase";
+import { createDemoIdentityAdapter } from "./identity/demo-adapter";
+import { createSupabaseIdentityAdapter } from "./identity/supabase-adapter";
+import type { AdapterOutcome, IdentityAdapter, SignupInput } from "./identity/adapter";
+import {
+  ANONYMOUS,
+  identityReducer,
+  isPending,
+  isSignedIn,
+  type IdentityEvent,
+  type IdentityStatus,
+} from "./identity/state";
 
 // ============================================================================
 // Shared auth surface for the EHR SPA.
-// - AuthContext + useAuth: single contract used by every page.
-// - AuthProvider: picks Supabase (real backend) when configured, else the demo
-//   localStorage provider. Callers (App.tsx) import only from here.
-// - RequireAuth / RouteAuthenticationGate: UX-level route guards (RFD §8.2). The
-//   server remains the source of truth via RLS; these are defense-in-depth.
+// - The state machine (identity/state.ts) is the source of truth for "what can
+//   this session do"; adapters own the mechanism (GoTrue or localStorage).
+// - Pages keep consuming useAuth(); they never import an adapter.
+// - RequireAuth / RouteAuthenticationGate are UX guards. The server (RLS +
+//   has_recent_mfa in 0008) remains authoritative.
 // ============================================================================
 
+export type AuthNext = "app" | "mfa" | "pending" | "none";
+
+export interface AuthResult {
+  error: string;
+  next: AuthNext;
+}
+
 export interface AuthContextValue {
+  /** False while the adapter is rehydrating the session. */
+  ready: boolean;
+  /** Which mechanism is live; UI copy branches on this, not on env guesses. */
+  mode: IdentityAdapter["mode"];
+  status: IdentityStatus;
   isAuthenticated: boolean;
   currentUser: WWWUser | null;
-  sessions: unknown[];
-  /** Demo role-picker login; no-op message in backend mode. */
-  login: (userId: string) => string;
-  loginWithEmail: (email: string, password: string) => Promise<string>;
-  signup: (input: { name: string; email: string; role: Role; password: string }) => Promise<string>;
+  pendingEmail: string | null;
+  reason: string | null;
+  /** Demo role picker. Resolves to an error message or "". */
+  login: (userId: string) => Promise<string>;
+  loginWithEmail: (email: string, password: string) => Promise<AuthResult>;
+  /** Resolves to an error message or "". */
+  verifyMfa: (code: string) => Promise<string>;
+  /** Resolves to an error message or "". */
+  stepUp: (password: string, code?: string) => Promise<string>;
+  /** Resolves to the reason step-up is needed, or null. */
+  checkStepUp: () => Promise<string | null>;
+  signup: (input: SignupInput) => Promise<AuthResult>;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  // ponytail: Supabase wins whenever env is present; otherwise the zero-backend
-  // demo provider keeps the app runnable. DEMO_MODE (banner) is independent.
-  return isSupabaseConfigured ? (
-    <SupabaseAuthProvider>{children}</SupabaseAuthProvider>
-  ) : (
-    <DemoAuthProvider>{children}</DemoAuthProvider>
+const defaultAdapter: IdentityAdapter = isSupabaseConfigured
+  ? createSupabaseIdentityAdapter()
+  : createDemoIdentityAdapter();
+
+function outcomeToEvent(outcome: AdapterOutcome): IdentityEvent | null {
+  switch (outcome.kind) {
+    case "anonymous":
+      return { type: "signed_out" };
+    case "mfa":
+      return { type: "mfa_challenge", email: outcome.email };
+    case "active":
+      return { type: "signed_in", user: outcome.user, email: outcome.email ?? null };
+    case "unverified":
+      return { type: "approval_required", email: outcome.email, reason: outcome.message };
+    case "expired":
+      return { type: "session_expired", reason: outcome.message };
+    case "error":
+      return null;
+  }
+}
+
+export function AuthProvider({
+  children,
+  adapter = defaultAdapter,
+}: {
+  children: ReactNode;
+  adapter?: IdentityAdapter;
+}) {
+  const [state, dispatch] = useReducer(identityReducer, ANONYMOUS);
+  const [ready, setReady] = useState(false);
+
+  // Read by the adapter's push callback without re-subscribing every render.
+  const statusRef = useRef(state.status);
+  statusRef.current = state.status;
+
+  const applyOutcome = useCallback((outcome: AdapterOutcome): AuthResult => {
+    const event = outcomeToEvent(outcome);
+    if (event) dispatch(event);
+    switch (outcome.kind) {
+      case "active":
+        return { error: "", next: "app" };
+      case "mfa":
+        return { error: "", next: "mfa" };
+      case "unverified":
+        return { error: "", next: "pending" };
+      case "error":
+        return { error: outcome.message, next: "none" };
+      case "expired":
+        return { error: outcome.message, next: "none" };
+      case "anonymous":
+        return { error: "", next: "none" };
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    setReady(false);
+    adapter
+      .restore()
+      .then((outcome) => {
+        if (!alive) return;
+        const event = outcomeToEvent(outcome);
+        if (event) dispatch(event);
+        setReady(true);
+      })
+      .catch(() => {
+        if (alive) setReady(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [adapter]);
+
+  useEffect(() => {
+    if (!adapter.subscribe) return;
+    return adapter.subscribe((outcome) => {
+      // Only an externally ended session may overwrite UI state. A SIGNED_OUT
+      // fired while signing out an unverified profile must not erase the
+      // pending screen, so we gate on the current status.
+      if (outcome.kind !== "anonymous") return;
+      if (statusRef.current === "active" || statusRef.current === "step_up_required") {
+        dispatch({ type: "signed_out" });
+      }
+    });
+  }, [adapter]);
+
+  const login = useCallback(
+    async (userId: string) => applyOutcome(await adapter.signInAs(userId)).error,
+    [adapter, applyOutcome]
   );
+
+  const loginWithEmail = useCallback(
+    async (email: string, password: string) =>
+      applyOutcome(await adapter.signIn(email.trim(), password)),
+    [adapter, applyOutcome]
+  );
+
+  const verifyMfa = useCallback(
+    async (code: string) => {
+      const outcome = await adapter.verifyMfa(code.trim());
+      if (outcome.kind === "error") return outcome.message;
+      applyOutcome(outcome);
+      return outcome.kind === "active" ? "" : "That code was not accepted. Try again.";
+    },
+    [adapter, applyOutcome]
+  );
+
+  const stepUp = useCallback(
+    async (password: string, code?: string) => {
+      const outcome = await adapter.stepUp(password, code);
+      if (outcome.kind === "error") return outcome.message;
+      applyOutcome(outcome);
+      return outcome.kind === "active" ? "" : "Your session is not fresh yet. Try again.";
+    },
+    [adapter, applyOutcome]
+  );
+
+  const checkStepUp = useCallback(async () => {
+    try {
+      const reason = await adapter.stepUpReason();
+      if (reason) dispatch({ type: "step_up_required", reason });
+      return reason;
+    } catch {
+      const reason = "Could not verify your session. Confirm your credentials to continue.";
+      dispatch({ type: "step_up_required", reason });
+      return reason;
+    }
+  }, [adapter]);
+
+  const signup = useCallback(
+    async (input: SignupInput) => applyOutcome(await adapter.signup(input)),
+    [adapter, applyOutcome]
+  );
+
+  const logout = useCallback(() => {
+    dispatch({ type: "signed_out" });
+    adapter.signOut("local").catch(() => {});
+  }, [adapter]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      ready,
+      mode: adapter.mode,
+      status: state.status,
+      isAuthenticated: isSignedIn(state),
+      currentUser: state.user,
+      pendingEmail: isPending(state) ? state.email : null,
+      reason: state.reason,
+      login,
+      loginWithEmail,
+      verifyMfa,
+      stepUp,
+      checkStepUp,
+      signup,
+      logout,
+    }),
+    [ready, adapter.mode, state, login, loginWithEmail, verifyMfa, stepUp, checkStepUp, signup, logout]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {
@@ -44,14 +234,39 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
+function RestoringSession({ label = "Restoring your session…" }: { label?: string }) {
+  return (
+    <div
+      className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center"
+      data-testid="auth-restoring"
+    >
+      <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-brand-600" />
+      <p className="text-sm text-slate-500">{label}</p>
+    </div>
+  );
+}
+
 /** Role-aware route guard (RFD §8.2 — server enforces via RLS; this is UX-level) */
 export function RequireAuth() {
-  const { isAuthenticated, currentUser } = useAuth();
+  const { ready, status, isAuthenticated, currentUser, reason } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
+  if (!ready) return <RestoringSession />;
+  if (status === "password_ok") {
+    return <Navigate to="/login/mfa" replace state={{ from: location.pathname }} />;
+  }
+  if (status === "unverified") {
+    return <Navigate to="/login/pending" replace />;
+  }
   if (!isAuthenticated || !currentUser) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ from: location.pathname, reason: status === "expired" ? reason : undefined }}
+      />
+    );
   }
   if (!canAccess(currentUser.role, location.pathname)) {
     // ponytail: this renders outside AppLayout, so there is no sidebar to escape
@@ -93,76 +308,47 @@ export function RequireAuth() {
 }
 
 // ============================================================================
-// RouteAuthenticationGate — forces re-auth for sensitive routes when the
-// session is older than AUTH_MAX_AGE_MS. ponytail: in demo mode the gate is
-// gesture-only; Supabase issues short-lived JWTs (jwt_expiry=3600) and refreshes
-// them, so a real refresh failure already bounces the user. The 8h window here
-// is an extra step-up signal layered on top of token expiry.
+// RouteAuthenticationGate — asks the adapter whether a sensitive route needs a
+// fresher authentication. Demo: session older than 8h. Supabase: AAL2 with an
+// `amr` timestamp older than 8h. The gate never decides on its own; the
+// adapter (and SQL in 0008) own the rule.
 // ============================================================================
 
-const AUTH_MAX_AGE_MS = 8 * 3600_000;
 const SENSITIVE_PATHS = ["/orders"];
 
 export function RouteAuthenticationGate() {
-  const { currentUser } = useAuth();
+  const { checkStepUp } = useAuth();
   const location = useLocation();
+  const sensitive = SENSITIVE_PATHS.some((p) => location.pathname.startsWith(p));
+  // Tie the result to the history entry that produced it. Otherwise navigating
+  // from a safe page to /orders renders one frame of orders before the check
+  // runs, and returning to the same pathname could reuse a stale result.
+  const [checkedKey, setCheckedKey] = useState<string | null>(null);
+  const [needsStepUp, setNeedsStepUp] = useState(false);
 
-  const sid = (() => {
-    try {
-      return sessionStorage.getItem("www-session-id");
-    } catch {
-      return null;
+  useEffect(() => {
+    if (!sensitive) {
+      setCheckedKey(null);
+      setNeedsStepUp(false);
+      return;
     }
-  })();
-  const session = useMemo(() => {
-    if (!sid) return null;
-    try {
-      const list = JSON.parse(localStorage.getItem("www-sessions") ?? "[]") as {
-        sessionId: string;
-        startedAt: string;
-      }[];
-      return list.find((s) => s.sessionId === sid) ?? null;
-    } catch {
-      return null;
-    }
-  }, [sid]);
+    let alive = true;
+    setNeedsStepUp(false);
+    checkStepUp().then((reason) => {
+      if (!alive) return;
+      setNeedsStepUp(!!reason);
+      setCheckedKey(location.key);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sensitive, location.key, location.pathname, checkStepUp]);
 
-  if (!currentUser) return <Navigate to="/login" replace />;
-
-  // ponytail: backend session age isn't tracked client-side; rely on Supabase
-  // token refresh. Step-up for sensitive routes is enforced server-side by RLS
-  // on /orders writes. The demo age check is intentionally skipped when backed.
-  if (isSupabaseConfigured) return <Outlet />;
-
-  const needsStepUp =
-    session &&
-    SENSITIVE_PATHS.some((p) => location.pathname.startsWith(p)) &&
-    Date.now() - new Date(session.startedAt).getTime() > AUTH_MAX_AGE_MS;
-
-  if (needsStepUp) {
-    return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-3 text-center">
-        <h1 className="text-lg font-bold text-slate-900">Re-authentication required</h1>
-        <p className="max-w-sm text-sm text-slate-500">
-          Your session is older than 8 hours. For security, sensitive actions require
-          recent authentication. Sign out and back in to continue.
-        </p>
-        <button
-          onClick={() => {
-            try {
-              sessionStorage.removeItem("www-session-id");
-            } catch {
-              /* ignore */
-            }
-            window.location.reload();
-          }}
-          className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700"
-        >
-          Continue
-        </button>
-      </div>
-    );
+  if (sensitive && checkedKey !== location.key) {
+    return <RestoringSession label="Checking whether this action needs a fresh sign-in…" />;
   }
-
+  if (needsStepUp) {
+    return <Navigate to="/login/step-up" replace state={{ from: location.pathname }} />;
+  }
   return <Outlet />;
 }

@@ -4,6 +4,137 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-10-26 — IdentityAdapter + identity state machine (client seam)
+
+The login architecture decided in ADR-0003 is now implemented on the client.
+`useAuth()` keeps its shape for the clinical pages; everything that decides *who
+the user is* moved behind an adapter, and the boolean `isAuthenticated` was
+replaced by an explicit state machine.
+
+### Added
+- `src/identity/state.ts` — `anonymous | password_ok | unverified | active |
+  step_up_required | expired`, with `identityReducer`, `isSignedIn()` and
+  `isPending()`. `locked` is deliberately absent: `CodeGate` is a per-screen view
+  lock, not a session state (ADR-0002/0003).
+- `src/identity/adapter.ts` — the seam: `AdapterOutcome` (`anonymous | mfa |
+  active | unverified | expired | error`) and the `IdentityAdapter` interface
+  (`restore`, `subscribe?`, `signIn`, `signInAs`, `verifyMfa`, `stepUp`,
+  `signup`, `signOut`, `stepUpReason`).
+- `src/identity/demo-adapter.ts` — the localStorage provider moved out of
+  `src/auth-demo.tsx`, unchanged in behaviour: 5-session cap, 12-hour retention,
+  8-hour step-up window, instant role grant on signup. Demo step-up refreshes the
+  timestamp without checking a credential and the screen says so.
+- `src/identity/supabase-adapter.ts` — GoTrue + `profiles`.
+  `evaluate()` signs out a missing, disabled or unverified profile *before*
+  reporting `unverified`, so an unapproved account never holds a token. AAL
+  `nextLevel='aal2'` with `currentLevel='aal1'` becomes `password_ok`;
+  `verifyMfa()` challenges the enrolled TOTP factor; `stepUpReason()` requires a
+  TOTP/WebAuthn `amr` entry younger than 8 hours and fails closed when `amr` is
+  string-only or the AAL query errors. `signup()` drops any session GoTrue
+  creates and returns `unverified`.
+- `src/pages/LoginMfa.tsx` (`/login/mfa`) — six-digit TOTP, cancel signs out,
+  any non-`password_ok` state redirects.
+- `src/pages/LoginStepUp.tsx` (`/login/step-up`) — password + TOTP in backend
+  mode; in demo mode a single Continue plus copy stating no credential is
+  checked. Re-asks `stepUpReason()` on mount so a refresh cannot strand the user.
+- `src/pages/PendingApproval.tsx` (`/login/pending`) — shows the adapter's reason
+  and the pending email; "Back to sign in" signs out.
+- `src/identity/state.test.ts` (7) and `src/identity/demo-adapter.test.ts` (9).
+
+### Changed
+- `src/auth.tsx` rewritten around `useReducer`; exposes `ready`, `mode`,
+  `status`, `currentUser`, `pendingEmail`, `reason`, `login`, `loginWithEmail`,
+  `verifyMfa`, `stepUp`, `checkStepUp`, `signup`, `logout`. `RequireAuth` routes
+  `password_ok` → `/login/mfa`, `unverified` → `/login/pending`, `expired` →
+  `/login` with the reason in router state.
+- `RouteAuthenticationGate` no longer no-ops in backend mode: on `/orders` it
+  calls `stepUpReason()` and redirects to `/login/step-up`. The check is keyed to
+  the history entry so clinical content is not painted before the result.
+- The `SIGNED_OUT` subscription only dispatches `signed_out` while the state is
+  `active` or `step_up_required`; otherwise signing out an unverified profile
+  would replace the pending screen.
+- `src/users.ts` gains `markAccountVerified()` so demo signup keeps its
+  instant-access behaviour; `Signup.tsx`, `Login.tsx` and `DemoPicker.tsx` now
+  consume `{ error, next }` results and await the async role sign-in.
+- Deleted `src/auth-demo.tsx` and `src/auth-supabase.tsx` (superseded; no imports
+  remained).
+
+### Verified
+- 64/64 Vitest across 9 files, `tsc --noEmit`, CI-equivalent ESLint, and both
+  `npm run build` / `npm run build:demo` pass.
+- Built demo artifact walked in a browser: demo picker → dashboard, `/orders`
+  gate redirect, aged session → step-up → orders, direct visits to
+  `/login/mfa` and `/login/pending` redirecting as designed, signup → sign-in,
+  wrong password, reception role denial, no console errors.
+
+### Not done
+- No TOTP **enrolment** UI; factors must be enrolled out-of-band. No admin UI for
+  `approve_profile` or invitations (SQL only).
+- The Supabase adapter has not been run against a live project — only demo mode
+  has browser evidence. `0008` is still authored, not applied, so the server-side
+  half of this seam is untested end-to-end.
+
+---
+
+## 2026-10-26 — Identity hardening migration (0008) + identity ADR
+
+Decisions taken for the login architecture prototype: stay on Supabase GoTrue,
+TOTP as the first second factor, and keep the doctor code as a view lock only.
+The decision record is `docs/adr/0003-identity-architecture.md`, including the
+replacement state machine (`anonymous | password_ok | unverified | active |
+step_up_required | expired`) and the `IdentityAdapter` seam that keeps
+`useAuth()` stable while the mechanism changes.
+
+### The three defects it closes
+- **Self-service admin escalation.** Signup chose its own role via
+  `raw_user_meta_data` (`0001:211`), and `profiles_self` was `for all using (id =
+  auth.uid())` (`0001:256`) — a user could update their own row to `role='admin'`
+  or another `org_id`. `0008` records the requested role separately, starts
+  accounts as `reception` + unverified, replaces the policy with select-only, and
+  routes role changes through audited admin RPCs. A trigger blocks org moves and
+  non-admin changes to role/verification/email as defense-in-depth.
+- **`verified` was UI-only.** `profileToUser()` hid unverified users, but
+  `current_org_id()`/`is_admin()` ignored the column, so RLS still served them
+  data. Both helpers (and `role_allows`) now require `verified and disabled_at is
+  null`, which also makes revocation effective on the next query instead of the
+  next token refresh.
+- **No server-side step-up.** `RouteAuthenticationGate` no-ops in backend mode
+  (`auth.tsx:135`). `0008` gates order authoring and medication administration on
+  GoTrue AAL2 plus a recent TOTP `amr` timestamp (`has_recent_mfa()`), with an
+  org-level switch that defaults on and can only be downgraded with step-up.
+
+### Added
+- `supabase/migrations/0008_identity_hardening.sql`: admin-chosen role approval,
+  single-use email-bound invitations, append-only `auth_events`, profile write
+  lockdown, server-side step-up, org-security-setting guards, and a manual
+  RLS-matrix assertion block. Marked **authored, not applied**; requires `0007`.
+- `docs/adr/0003-identity-architecture.md`.
+- `src/auth-supabase.tsx` now reads `profiles.disabled_at` and refuses to project
+  a revoked profile; `loginWithEmail` distinguishes "pending verification" from
+  "access revoked" instead of silently bouncing. `src/pages/Signup.tsx` labels
+  the field "Requested role" and, outside demo mode, says an administrator
+  approves it before sign-in. The demo copy is unchanged because the demo
+  provider really does grant the role immediately. (That provider has since moved
+  to `src/identity/supabase-adapter.ts`.)
+
+### Verified
+- 48/48 Vitest, `tsc --noEmit`, CI-equivalent ESLint, and both
+  `npm run build` / `npm run build:demo` pass. The built demo artifact was loaded
+  in a browser: `/signup` shows "Requested role" with the demo helper, `/login`
+  still offers the demo workspace, and no backend-only "pending approval" copy
+  leaks into demo mode.
+
+### Not done
+- Client-side state machine, `/login/mfa`, `/login/step-up` and `/login/pending`
+  — implemented in the entry above (2026-10-26, IdentityAdapter). That section
+  supersedes this one.
+- `0008` has not been executed against any database (no Postgres/Supabase CLI in
+  this environment). It parsed with `pglast` (82 statements, no syntax errors),
+  but PL/pgSQL bodies are not validated by a parser; staging apply and the
+  assertion block are the next gate.
+
+---
+
 ## 2026-10-20 — Live demo deployment broke; two defects found and fixed
 
 The Vercel site started rendering "Application not started" after `f94e65f` landed.

@@ -24,7 +24,7 @@ notification) on the NDPA track.
 | ID | Risk | Where it lives today | Mitigation | Status |
 | --- | --- | --- | --- | --- |
 | R-01 | A production build with no backend silently serves 12 fake patients as if they were real | `src/data/api.ts` returned `mockData` whenever env was absent | `VITE_APP_MODE` + startup gate + `demoFallback()` throwing in production (ADR-0001) | **Closed** 2026-10-09 |
-| R-02 | Same mis-deploy also removes authentication (demo role-picker login) | `src/auth.tsx:31-38` fell back to `DemoAuthProvider` | Production mode cannot boot at all without a backend, so the demo provider is unreachable there | **Closed** 2026-10-09 |
+| R-02 | Same mis-deploy also removes authentication (demo role-picker login) | `src/auth.tsx:69-71` picks `DemoIdentityAdapter` only when no backend is configured | Production mode cannot boot at all without a backend (`StartupBlocked`), so the demo adapter is unreachable there | **Closed** 2026-10-09 |
 | R-03 | UI claimed pages are "encrypted" when the control is a client-side view lock | `Sidebar.tsx`, `CodeGate.tsx`, `Login.tsx` ("SOC 2 · HITRUST · 256-bit"), `Messages.tsx` ("encrypted end-to-end … per HIPAA policy") | False certification/encryption claims removed and replaced with accurate wording; real confidentiality moves server-side (ADR-0002) | **Closed (copy)**; server-side control = R-04 |
 | R-04 | Client records + AES key sit in the same browser storage | `www-*` keys in `localStorage`, `www-dek` in `src/utils/crypto.ts` | `0007_www_registry_and_access_hardening.sql` creates the server-side registry; Phase 2 wires the app to it and purges device stores | **Open** — migration authored, not applied, no client wiring |
 | R-05 | Coarse RLS: `role_can()` ignores the action, `for all` policies let any org member update/delete PHI | `0004_role_rls.sql` | `role_allows(entity, action)` + per-action policies + `revoke delete, truncate`; append-only triggers | **Open** — needs staging apply + the RLS matrix test |
@@ -36,9 +36,12 @@ notification) on the NDPA track.
 | R-11 | CDS rules are a hand-written substring matcher, not a drug reference | `src/utils/cds.ts` (`ALLERGY_RULES`, 5 rules) | Fixed the data-source defect (it evaluated mock patients instead of the loaded chart); still needs RxNorm/validated knowledge base + clinical sign-off before real use | **Partially closed** — see R-12 |
 | R-12 | CDS now reads the caller-supplied patient, but the ruleset itself is unvalidated | `src/utils/cds.ts` | Provenance, versioning, override-with-reason logging, clinical governance review | **Open** |
 | R-13 | PHI residue already on clinic browsers from demo use | Any device that ran the demo | Export → validate → import script, then clear `www-*` stores; document as a migration-window task, not a code change | **Open** |
-| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `Sidebar.tsx` footer states it plainly | Named accounts + TOTP/WebAuthn + server-side session expiry (Phase 1 remainder) | **Open** |
+| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `LoginMfa.tsx`, `LoginStepUp.tsx`, `Sidebar.tsx` footer states it plainly | `0008` gates order writes on GoTrue AAL2/TOTP and adds `set_profile_access` revocation; the challenge and step-up screens now exist (`/login/mfa`, `/login/step-up`), but TOTP **enrolment**, admin approval/invitation UI, named-account policy and idle auto-logoff remain (ADR-0003) | **Partially mitigated** — migration authored, not applied; no enrolment UI |
 | R-15 | No backups, no DR runbook, no monitoring, no CSP | infrastructure, none in repo | Phase 3/4: PITR + quarterly restore rehearsal, IaC, PHI-redacting log sink, Sentry, CSP after retiring `vite-plugin-singlefile` | **Open** |
 | R-16 | The verification gates did not execute the data layer: `demoFallback()` threw in the *demo* artifact (gated on backend presence, not mode) while tests/typecheck/lint all passed, and unbacked security copy survived on the desktop-only Login panel | `src/data/api.ts`, `src/data/api.test.ts`, root AGENTS.md Verification | Fixed 2026-10-20: gate keys on `DEMO_DATA_ALLOWED`; `api.test.ts` asserts loaders resolve; a standing rule requires loading built `dist/index.html` in a browser before claiming a screen works | **Closed (2026-10-20)** |
+| R-17 | Any signed-in user could make themselves an admin: signup role came from client metadata (`0001:211`) and `profiles_self` allowed `UPDATE` of the whole row (`0001:256`) | `supabase/migrations/0001_init.sql`, signup in `src/identity/supabase-adapter.ts` | `0008` stores `requested_role` only, starts accounts as reception + unverified, replaces the policy with select-only, moves role changes to audited admin RPCs, and adds a column-guard trigger. The adapter drops the session `signUp` creates and reports `unverified` | **Closed in code** — `0008` authored, not applied |
+| R-18 | `verified`/revocation were not enforced by RLS: `current_org_id()` and `is_admin()` ignored them, so an unapproved or revoked profile kept reading PHI until JWT expiry | `supabase/migrations/0001_init.sql:175`, `evaluate()` in `src/identity/supabase-adapter.ts` | `0008` folds `verified and disabled_at is null` into every helper; `set_profile_access(..., false)` takes effect on the next query (no `auth.sessions` surgery); the adapter signs out a disabled/unverified profile and distinguishes revoked from pending in the message | **Closed in code** — `0008` authored, not applied |
+| R-19 | Step-up was demo-only: `RouteAuthenticationGate` returned `<Outlet/>` whenever Supabase was configured, so backend mode had no recent-auth check on `/orders` | `RouteAuthenticationGate` in `src/auth.tsx`, `stepUpReason()` in `src/identity/supabase-adapter.ts` | The gate now calls `stepUpReason()` in every mode and routes to `/login/step-up`; `0008` requires GoTrue AAL2 + recent TOTP `amr` for order authoring/administration; org switch defaults on and downgrades require step-up + audit | **Closed in code** — client check implemented; `0008` authored, not applied |
 
 ## What the app still must not do
 
@@ -74,3 +77,29 @@ mistaken for a clinical document.
 - `npm run build` (production) still refuses to boot without a backend — the
   behaviour the live site displayed, and the reason `vercel.json` now declares the
   demo mode explicitly instead of leaving it to the default.
+
+## Identity hardening evidence (2026-10-26)
+
+- `supabase/migrations/0008_identity_hardening.sql` parsed with libpg_query
+  (`pglast`): 82 statements, no syntax errors. PL/pgSQL bodies are opaque to a
+  parser and the migration has **not** been executed — no Postgres, Supabase CLI
+  or Docker is available in this environment.
+- Client seam implemented in `src/identity/` (`state.ts`, `adapter.ts`,
+  `demo-adapter.ts`, `supabase-adapter.ts`), with `src/auth.tsx` owning the
+  reducer and `RouteAuthenticationGate` calling `stepUpReason()` in every mode.
+  `/login/mfa`, `/login/step-up` and `/login/pending` exist; `auth-supabase.tsx`
+  and `auth-demo.tsx` are gone. 64/64 Vitest across 9 files, `tsc --noEmit`, the
+  CI-equivalent ESLint command and both builds pass.
+- Browser walkthrough of the built demo artifact: demo picker → dashboard,
+  `/orders` step-up gate, aged session → `/login/step-up` → orders, direct visits
+  to `/login/mfa` and `/login/pending` redirecting, signup → sign-in, wrong
+  password, reception role denial, no console errors. **Demo mode only** — the
+  Supabase adapter has not run against a live project, so R-14/R-17/R-18/R-19
+  still rest on the staging apply below.
+- Screens not yet built: TOTP enrolment, admin approval, invitations (clients
+  must be enrolled/approved out-of-band via SQL).
+- Staging apply plus the assertion block at the foot of `0008` are the gate. The
+  four checks that decide it: an unverified account reads 0 patients; a self
+  update of `profiles.role` is denied; an order insert fails at `aal1` and
+  succeeds with a fresh `totp` entry in `amr`; a revoked profile reads 0 rows on
+  its next query without a new token.

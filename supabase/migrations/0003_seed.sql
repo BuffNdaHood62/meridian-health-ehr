@@ -66,7 +66,8 @@ begin
   end loop;
 
   -- Seed staff are pre-verified demo accounts: the verified gate (see
-  -- auth-supabase.tsx) would otherwise lock them out of a fresh project.
+  -- evaluate() in src/identity/supabase-adapter.ts) would otherwise lock them
+  -- out of a fresh project.
   update public.profiles p set verified = true
   from auth.users u where p.id = u.id and u.email like '%@www.clinic';
 end $$;

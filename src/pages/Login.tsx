@@ -13,16 +13,26 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const routerState = location.state as { from?: string; reason?: string } | null;
+  const from = routerState?.from ?? "/";
+  const notice = routerState?.reason ?? "";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setBusy(true);
-    const err = await loginWithEmail(email.trim(), password);
+    const result = await loginWithEmail(email.trim(), password);
     setBusy(false);
-    if (err) {
-      setError(err);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    if (result.next === "mfa") {
+      navigate("/login/mfa", { replace: true, state: { from } });
+      return;
+    }
+    if (result.next === "pending") {
+      navigate("/login/pending", { replace: true, state: { email: email.trim() } });
       return;
     }
     navigate(from, { replace: true });
@@ -102,6 +112,15 @@ export default function Login() {
 
           <h2 className="text-2xl font-bold text-slate-900">Welcome back</h2>
           <p className="mt-1 text-sm text-slate-500">Sign in to your clinical workspace.</p>
+
+          {notice && !error && (
+            <p
+              className="mt-4 rounded-xl bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200"
+              data-testid="login-notice"
+            >
+              {notice}
+            </p>
+          )}
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-4" data-testid="login-form">
             <div>

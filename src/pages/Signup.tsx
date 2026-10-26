@@ -28,10 +28,17 @@ export default function Signup() {
       return;
     }
     setBusy(true);
-    const err = await signup({ name: name.trim(), email: email.trim(), role, password });
+    const result = await signup({ name: name.trim(), email: email.trim(), role, password });
     setBusy(false);
-    if (err) {
-      setError(err);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    if (result.next === "pending") {
+      navigate("/login/pending", {
+        replace: true,
+        state: { email: email.trim(), created: true },
+      });
       return;
     }
     navigate("/", { replace: true });
@@ -76,7 +83,7 @@ export default function Signup() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Role</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Requested role</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
@@ -90,7 +97,9 @@ export default function Signup() {
               ))}
             </select>
             <p className="mt-1 text-[11px] text-slate-400">
-              Grants access to {ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}
+              {DEMO_MODE
+                ? `Grants access to ${ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}`
+                : `Requested access: ${ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}. An administrator approves this before sign-in.`}
             </p>
           </div>
           <div>

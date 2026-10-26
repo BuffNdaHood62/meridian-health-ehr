@@ -63,12 +63,15 @@ export default function DemoPicker() {
   // entering the demo stays a single click for the common case.
   const [selected, setSelected] = useState<WWWUser["id"]>(USERS[0]?.id ?? "");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/";
 
-  const enterWorkspace = () => {
+  const enterWorkspace = async () => {
     setError("");
-    const err = login(selected);
+    setBusy(true);
+    const err = await login(selected);
+    setBusy(false);
     if (err) {
       setError(err);
       return;
@@ -156,8 +159,8 @@ export default function DemoPicker() {
 
           <button
             type="button"
-            onClick={enterWorkspace}
-            disabled={!selected}
+            onClick={() => void enterWorkspace()}
+            disabled={!selected || busy}
             data-testid="demo-submit"
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-200 transition-colors hover:bg-brand-700 disabled:opacity-70"
           >

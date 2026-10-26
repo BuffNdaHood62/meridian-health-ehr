@@ -17,6 +17,14 @@ Tech stack pins: React 19, Vite 7 (+ vite-plugin-singlefile), TypeScript 5.9, Ta
 - Gates key on the **mode**, never on "is a backend configured" — a demo build has no backend either. `demoFallback()` in `src/data/api.ts` is the canonical shape; `src/data/api.test.ts` is the regression guard for it.
 - `vercel.json` pins the deployed site to `npm run build:demo`. At go-live, change or delete it — a pinned demo build serves fake data on a real clinical URL, and the fail-closed default in `npm run build` is what protects a production deploy.
 
+## Identity (read before touching auth, profiles or RLS helpers)
+- Supabase GoTrue is the identity provider. TOTP (AAL2) is the second factor. `CodeGate` is a per-screen view lock, never a factor (ADR-0002, ADR-0003).
+- The client has an explicit identity state machine: `anonymous | password_ok | unverified | active | step_up_required | expired` (`src/identity/state.ts`). Adapters (`src/identity/demo-adapter.ts`, `src/identity/supabase-adapter.ts`) own the mechanism; pages only consume `useAuth()`. Do not collapse this back into `isAuthenticated: boolean` — that is what hid MFA and pending states.
+- `profiles` is read-only to clients. Role, verification and org writes go through the `0008` RPCs; never add an UPDATE/INSERT policy to `profiles`, and never honor a role from signup metadata.
+- Any helper that answers "who is this?" (`current_org_id`, `is_admin`, `role_allows`, `role_can`) must require `verified and disabled_at is null`. `current_org_id()` returning null is the fail-closed floor every policy relies on.
+- Server-side step-up = `has_recent_mfa()` (AAL2 + recent totp/webauthn amr). The client's doctor-code lockout is UX only; do not describe `auth_events` as covering failed password attempts.
+- An unverified/revoked Supabase profile is signed out by the adapter on sight; `/login/pending` is reached from an `unverified` outcome, never by keeping a token for an unapproved profile.
+
 ## Global Work Rules
 - Shortest working diff wins. No speculative abstractions.
 - Bug fix = root cause, not symptom; grep callers before editing shared helpers.
@@ -26,7 +34,7 @@ Tech stack pins: React 19, Vite 7 (+ vite-plugin-singlefile), TypeScript 5.9, Ta
 - `src/utils/**` may not import `src/data/mockData` (ESLint boundary) — pure logic takes data from its caller. `runCDS` lost a real patient-safety bug this way.
 
 ## Verification
-- `npm run test` — Vitest unit tests (env/cds/cn/format/wwwRecords/users). Fast, primary gate.
+- `npm run test` — Vitest unit tests (env/cds/cn/format/wwwRecords/users/identity). Fast, primary gate.
 - `npm run lint`, `npm run typecheck` — see Local Environment caveats.
 - `npm run build` AND `npm run build:demo` — both must pass before shipping (CI runs both).
 - `npm run audit` — dependency advisories (6 open, 2 critical, all build-toolchain; see risk register R-10).
@@ -36,9 +44,9 @@ Tech stack pins: React 19, Vite 7 (+ vite-plugin-singlefile), TypeScript 5.9, Ta
 - `src/App.tsx` — all routes, HashRouter, `RequireAuth` wraps the app layout.
 - `src/main.tsx` — startup gate; mounts `StartupBlocked` instead of the app in production mode with no backend.
 - `src/env.ts` / `src/config.ts` — mode contract + derived flags (`DEMO_MODE`, support contacts).
-- `src/auth.tsx` — AuthProvider/useAuth/RequireAuth; picks `auth-supabase.tsx` (GoTrue) when configured, else `auth-demo.tsx` (localStorage role picker, no credentials). `auth-doctor.tsx` = per-page, per-session doctor-code view gate (a UX control, not encryption — see ADR-0002).
+- `src/auth.tsx` — AuthProvider/useAuth/RequireAuth/RouteAuthenticationGate. The state machine is `src/identity/state.ts`; `src/identity/{demo,supabase}-adapter.ts` sit behind `src/identity/adapter.ts`, so pages never see GoTrue or localStorage. UI branches on `useAuth().mode`, not env guesses. `auth-doctor.tsx` = per-page, per-session doctor-code view gate (a UX control, not encryption — see ADR-0002).
 - `src/lib/supabase.ts` / `src/data/api.ts` — the backend path (`requireBackend`, `demoFallback`) and Patient assembly; `src/data/mockData.ts` is a demo/test fixture, not a fallback.
-- `supabase/migrations/` — schema + RLS source of truth (0001-0006 applied upstream, **0007 authored not applied**).
+- `supabase/migrations/` — schema + RLS source of truth (0001-0006 applied upstream, **0007 + 0008 authored not applied**). `0008` requires `0007` and its header lists GoTrue settings + the first-admin bootstrap.
 - `src/pages/` — one file per route screen (child DOX).
 - `src/components/layout/` — AppLayout/Sidebar/Topbar/nav (nav.ts is the sidebar source of truth).
 - `src/components/ui/` — presentational primitives (Avatar, Badge, Card, PageHeader, StatCard, CodeGate, ErrorNote, Modal).

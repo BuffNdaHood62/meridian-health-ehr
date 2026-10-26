@@ -133,6 +133,16 @@ export async function verifyCredentials(email: string, password: string): Promis
   return hash === acc.pwHash ? acc : null;
 }
 
+/**
+ * Demo-only: a locally created account is auto-approved on first successful
+ * sign-in. The backend path never does this — approval is an admin action
+ * (0008 approve_profile()).
+ */
+export function markAccountVerified(accountId: string): void {
+  const list = loadAccounts().map((a) => (a.id === accountId ? { ...a, verified: true } : a));
+  saveAccounts(list);
+}
+
 // Build a WWWUser from a signed-up account for the session layer.
 export function accountToUser(acc: Account): WWWUser {
   return {
