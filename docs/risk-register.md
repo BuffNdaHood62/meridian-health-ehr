@@ -26,29 +26,38 @@ notification) on the NDPA track.
 | R-01 | A production build with no backend silently serves 12 fake patients as if they were real | `src/data/api.ts` returned `mockData` whenever env was absent | `VITE_APP_MODE` + startup gate + `demoFallback()` throwing in production (ADR-0001) | **Closed** 2026-10-09 |
 | R-02 | Same mis-deploy also removes authentication (demo role-picker login) | `src/auth.tsx:69-71` picks `DemoIdentityAdapter` only when no backend is configured | Production mode cannot boot at all without a backend (`StartupBlocked`), so the demo adapter is unreachable there | **Closed** 2026-10-09 |
 | R-03 | UI claimed pages are "encrypted" when the control is a client-side view lock | `Sidebar.tsx`, `CodeGate.tsx`, `Login.tsx` ("SOC 2 · HITRUST · 256-bit"), `Messages.tsx` ("encrypted end-to-end … per HIPAA policy") | False certification/encryption claims removed and replaced with accurate wording; real confidentiality moves server-side (ADR-0002) | **Closed (copy)**; server-side control = R-04 |
-| R-04 | Client records + AES key sit in the same browser storage | `www-*` keys in `localStorage`, `www-dek` in `src/utils/crypto.ts` | `0007_www_registry_and_access_hardening.sql` creates the server-side registry; Phase 2 wires the app to it and purges device stores | **Open** — migration authored, not applied, no client wiring |
-| R-05 | Coarse RLS: `role_can()` ignores the action, `for all` policies let any org member update/delete PHI | `0004_role_rls.sql` | `role_allows(entity, action)` + per-action policies + `revoke delete, truncate`; append-only triggers | **Open** — needs staging apply + the RLS matrix test |
-| R-06 | Audit trail is client-writable and capped at 500 rows | `src/utils/audit.ts` (`CAP = 500`, localStorage) | DB-side hash-chained `audit_log`, immutability trigger, admin/self-only reads | **Open** — same dependency as R-04 |
+| R-04 | Client records + AES key sit in the same browser storage | `www-*` keys in `localStorage`, `www-dek` in `src/utils/crypto.ts` | `0007` created the server-side registry (applied 2026-10-26); Phase 2 wires the app to it and purges device stores | **Open** — tables live, no client wiring yet |
+| R-05 | Coarse RLS: `role_can()` ignored the action, `for all` policies let any org member update/delete PHI | `0004_role_rls.sql` (replaced) | `role_allows(entity, action)` + per-action policies + `revoke delete, truncate, references` from `anon`/`authenticated` | **Closed** — `0007` applied to `zdtaludwhxnjutosrnvi` 2026-10-26; 23 tables now carry per-action policies |
+| R-06 | Audit trail is client-writable and capped at 500 rows | `src/utils/audit.ts` (`CAP = 500`, localStorage) — demo mode only | DB-side hash-chained `audit_log`, immutability trigger, admin/self-only reads; the R-20 search-path defect that made every hosted audit write fail is fixed by `0009` | **Partially closed** — server trail works and is verified on the hosted project; the demo store is browser-local by design |
 | R-07 | Record export puts PHI into email; print sheet had no provenance or trail | `src/utils/recordExport.ts` (was `document.write` + raw `mailto:`) | DOM-built sheet (no markup injection), provenance + demo watermark, explicit recipient authorization step, every export audited | **Mitigated**; Phase 3 replaces mail body with an expiring share link |
 | R-08 | WWW numbers 001-999 allocated by a client-side max+1 scan | `src/utils/wwwRecords.ts:111-121` | `register_www_client()` with a locked per-org counter row and a hard exhaustion error | **Open** — server function exists, client path still in use |
-| R-09 | `VITE_APP_MODE=demo` against a real project would re-enable fake data | deployment config, not code | Accept while data is fake; require deploy-approval review of env before go-live; add a release checklist item | **Accepted (demo only)** |
+| R-09 | `VITE_APP_MODE=demo` against a real project would re-enable fake data | deployment config, not code | `vercel.json` now builds production mode (`npm run build`), so the deployed artifact refuses to boot without a backend. Remaining exposure is someone setting `VITE_APP_MODE=demo` in the Vercel project — a release-checklist item to verify before each deploy | **Mitigated (2026-10-26)** — env review still manual |
 | R-10 | Six npm advisories remain, 2 critical, all in the build toolchain (`vitest`/`tinypool`, `vite-plugin-singlefile`) | `package-lock.json` | `npm audit fix` cleared 3; remaining need a **major** vitest 3→5 bump — a human decision. CI now reports audit on every run | **Open**, non-blocking by design |
 | R-11 | CDS rules are a hand-written substring matcher, not a drug reference | `src/utils/cds.ts` (`ALLERGY_RULES`, 5 rules) | Fixed the data-source defect (it evaluated mock patients instead of the loaded chart); still needs RxNorm/validated knowledge base + clinical sign-off before real use | **Partially closed** — see R-12 |
 | R-12 | CDS now reads the caller-supplied patient, but the ruleset itself is unvalidated | `src/utils/cds.ts` | Provenance, versioning, override-with-reason logging, clinical governance review | **Open** |
 | R-13 | PHI residue already on clinic browsers from demo use | Any device that ran the demo | Export → validate → import script, then clear `www-*` stores; document as a migration-window task, not a code change | **Open** |
-| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `LoginMfa.tsx`, `LoginStepUp.tsx`, `Sidebar.tsx` footer states it plainly | `0008` gates order writes on GoTrue AAL2/TOTP and adds `set_profile_access` revocation; the challenge and step-up screens now exist (`/login/mfa`, `/login/step-up`), but TOTP **enrolment**, admin approval/invitation UI, named-account policy and idle auto-logoff remain (ADR-0003) | **Partially mitigated** — migration authored, not applied; no enrolment UI |
+| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `LoginMfa.tsx`, `LoginStepUp.tsx`, `Sidebar.tsx` footer states it plainly | `0008` gates order writes on GoTrue AAL2/TOTP and adds `set_profile_access` revocation (applied 2026-10-26); challenge and step-up screens exist (`/login/mfa`, `/login/step-up`) | **Partially mitigated** — server gate live; TOTP **enrolment**, admin approval/invitation UI, named-account policy and idle auto-logoff remain (0 factors enrolled today) |
 | R-15 | No backups, no DR runbook, no monitoring, no CSP | infrastructure, none in repo | Phase 3/4: PITR + quarterly restore rehearsal, IaC, PHI-redacting log sink, Sentry, CSP after retiring `vite-plugin-singlefile` | **Open** |
 | R-16 | The verification gates did not execute the data layer: `demoFallback()` threw in the *demo* artifact (gated on backend presence, not mode) while tests/typecheck/lint all passed, and unbacked security copy survived on the desktop-only Login panel | `src/data/api.ts`, `src/data/api.test.ts`, root AGENTS.md Verification | Fixed 2026-10-20: gate keys on `DEMO_DATA_ALLOWED`; `api.test.ts` asserts loaders resolve; a standing rule requires loading built `dist/index.html` in a browser before claiming a screen works | **Closed (2026-10-20)** |
-| R-17 | Any signed-in user could make themselves an admin: signup role came from client metadata (`0001:211`) and `profiles_self` allowed `UPDATE` of the whole row (`0001:256`) | `supabase/migrations/0001_init.sql`, signup in `src/identity/supabase-adapter.ts` | `0008` stores `requested_role` only, starts accounts as reception + unverified, replaces the policy with select-only, moves role changes to audited admin RPCs, and adds a column-guard trigger. The adapter drops the session `signUp` creates and reports `unverified` | **Closed in code** — `0008` authored, not applied |
-| R-18 | `verified`/revocation were not enforced by RLS: `current_org_id()` and `is_admin()` ignored them, so an unapproved or revoked profile kept reading PHI until JWT expiry | `supabase/migrations/0001_init.sql:175`, `evaluate()` in `src/identity/supabase-adapter.ts` | `0008` folds `verified and disabled_at is null` into every helper; `set_profile_access(..., false)` takes effect on the next query (no `auth.sessions` surgery); the adapter signs out a disabled/unverified profile and distinguishes revoked from pending in the message | **Closed in code** — `0008` authored, not applied |
-| R-19 | Step-up was demo-only: `RouteAuthenticationGate` returned `<Outlet/>` whenever Supabase was configured, so backend mode had no recent-auth check on `/orders` | `RouteAuthenticationGate` in `src/auth.tsx`, `stepUpReason()` in `src/identity/supabase-adapter.ts` | The gate now calls `stepUpReason()` in every mode and routes to `/login/step-up`; `0008` requires GoTrue AAL2 + recent TOTP `amr` for order authoring/administration; org switch defaults on and downgrades require step-up + audit | **Closed in code** — client check implemented; `0008` authored, not applied |
+| R-17 | Any signed-in user could make themselves an admin: signup role came from client metadata (`0001:211`) and `profiles_self` allowed `UPDATE` of the whole row (`0001:256`) | `supabase/migrations/0001_init.sql`, signup in `src/identity/supabase-adapter.ts` | `0008` stores `requested_role` only, starts accounts as reception + unverified, replaces the policy with select-only, moves role changes to audited admin RPCs, and adds a column-guard trigger. The adapter drops the session `signUp` creates and reports `unverified` | **Closed** — applied 2026-10-26; probe as `authenticated`: `update profiles set role='admin' where id=auth.uid()` → `42501 permission denied for table profiles`. The legitimate half also now works: `approve_profile` ran as the seeded admin and flipped a pending account to `doctor verified=true` (R-20 fixed the audit write it depends on) |
+| R-18 | `verified`/revocation were not enforced by RLS: `current_org_id()` and `is_admin()` ignored them, so an unapproved or revoked profile kept reading PHI until JWT expiry | `supabase/migrations/0001_init.sql:175`, `evaluate()` in `src/identity/supabase-adapter.ts` | `0008` folds `verified and disabled_at is null` into every helper; `set_profile_access(..., false)` takes effect on the next query (no `auth.sessions` surgery); the adapter signs out a disabled/unverified profile and distinguishes revoked from pending in the message | **Closed** — applied 2026-10-26; probes as `authenticated`: unverified → `count(*) from patients` = **0**, `current_org_id()` = NULL; same account with `disabled_at` set → **0**, while a verified doctor still sees its org's 2 rows |
+| R-19 | Step-up was demo-only: `RouteAuthenticationGate` returned `<Outlet/>` whenever Supabase was configured, so backend mode had no recent-auth check on `/orders` | `RouteAuthenticationGate` in `src/auth.tsx`, `stepUpReason()` in `src/identity/supabase-adapter.ts` | The gate now calls `stepUpReason()` in every mode and routes to `/login/step-up`; `0008` requires GoTrue AAL2 + recent TOTP `amr` for order authoring/administration; org switch defaults on and downgrades require step-up + audit | **Closed** — applied 2026-10-26; order insert at `aal1` → `42501 new row violates row-level security policy`, same insert with `aal2` + a fresh `totp` `amr` entry → succeeds |
+| R-20 | Every `audit_log` write fails on the hosted project, so `append_audit()` — and with it `approve_profile`, `set_profile_access`, `set_profile_role`, `update_my_profile`, invitation creation/redemption and the audited app actions — error out | `chain_audit_hash()` in `0007`, `create_invitation`/`accept_invitation` in `0008`; Supabase installs pgcrypto in the `extensions` schema while these pin `set search_path = public` | Found 2026-10-26 by dry-running `approve_profile` (`42883 function digest(text, unknown) does not exist`). `0009_crypto_search_path_fix.sql` widens those three functions to `public, extensions` without touching their bodies; the longer-term shape is the built-in `sha256()` on PG 17 and no pgcrypto at all | **Closed** — `0009` applied 2026-10-26; `approve_profile` then wrote its audit row on the hosted project (`action=approve`, `actor=admin`, `row_hash` computed). Longer-term shape is still the built-in `sha256()` with no pgcrypto dependency |
+| R-21 | Role wildcards grant **read access to every entity** to every role: `role_allows()` returns true for `select` regardless of entity, so `lab` and `reception` can read `notes` (and `history`, `medications`, …). The "lab cannot read notes" expectation in the `0007` assertion comments is not what the code does | `role_allows()` CASE in `0008:197`, consumed by `notes_read`/`history_read`/`medications_read` in `0007:480-486` | `role_permissions` in `0010` makes the matrix one row per `(role, entity, action)`, so tightening is a data change, not a helper rewrite. Preserved verbatim in `0010` because narrowing clinical read access is a clinical decision | **Open** — documented, behaviour unchanged; needs sign-off on which roles may read notes/history/medications |
 
 ## What the app still must not do
 
-Until R-04, R-05, R-06, R-08, R-13 and R-14 are closed, this build must not be
-used for real patient records. Demo mode is the only approved use, and the demo
-banner plus the print/email watermark exist so that a demo artifact cannot be
-mistaken for a clinical document.
+The identity and access defects (R-05, R-17, R-18, R-19, R-20) are now enforced
+and verified by the live database. They are not the remaining blockers. Until
+**R-04, R-06, R-08, R-12, R-13, R-14, R-15 and R-21** are closed this build must
+not hold real patient records: clinical records still live in browser storage, the
+WWW-number and record-migration paths are unwired, the CDS ruleset is
+unvalidated, no TOTP factor is enrolled, there are no backups/monitoring/CSP, and
+every role can currently read every entity including clinical notes.
+
+Demo mode remains the only approved use, and the demo banner plus the print/email
+watermark exist so that a demo artifact cannot be mistaken for a clinical
+document.
 
 ## Phase acceptance evidence (2026-10-09)
 
@@ -75,15 +84,17 @@ mistaken for a clinical document.
   `12,000`, `trusted by`, `3 devices`, the fabricated `10.42.18.6` session IP.
 - `npx vitest run` — 48 passed / 7 files (adds `src/data/api.test.ts`).
 - `npm run build` (production) still refuses to boot without a backend — the
-  behaviour the live site displayed, and the reason `vercel.json` now declares the
-  demo mode explicitly instead of leaving it to the default.
+  behaviour the live site displayed. (At the time, `vercel.json` pinned the demo
+  build; it now builds production mode — see R-09 and the 2026-10-26 entry in
+  `Documentation.md`.)
 
 ## Identity hardening evidence (2026-10-26)
 
 - `supabase/migrations/0008_identity_hardening.sql` parsed with libpg_query
   (`pglast`): 82 statements, no syntax errors. PL/pgSQL bodies are opaque to a
-  parser and the migration has **not** been executed — no Postgres, Supabase CLI
-  or Docker is available in this environment.
+  parser, so this was evidence only up to 2026-10-26, when `0008` was applied to
+  the cloud project and its behaviour was probed directly — see "0007 + 0008
+  applied to the cloud project" below.
 - Client seam implemented in `src/identity/` (`state.ts`, `adapter.ts`,
   `demo-adapter.ts`, `supabase-adapter.ts`), with `src/auth.tsx` owning the
   reducer and `RouteAuthenticationGate` calling `stepUpReason()` in every mode.
@@ -94,12 +105,80 @@ mistaken for a clinical document.
   `/orders` step-up gate, aged session → `/login/step-up` → orders, direct visits
   to `/login/mfa` and `/login/pending` redirecting, signup → sign-in, wrong
   password, reception role denial, no console errors. **Demo mode only** — the
-  Supabase adapter has not run against a live project, so R-14/R-17/R-18/R-19
-  still rest on the staging apply below.
+  Supabase adapter has not run in a browser against a backend-configured build;
+  the server half was verified directly instead (see the apply section below).
 - Screens not yet built: TOTP enrolment, admin approval, invitations (clients
   must be enrolled/approved out-of-band via SQL).
-- Staging apply plus the assertion block at the foot of `0008` are the gate. The
+- Staging apply plus the assertion block at the foot of `0008` were the gate. The
   four checks that decide it: an unverified account reads 0 patients; a self
   update of `profiles.role` is denied; an order insert fails at `aal1` and
   succeeds with a fresh `totp` entry in `amr`; a revoked profile reads 0 rows on
-  its next query without a new token.
+  its next query without a new token. **All four ran green — see the next
+  section.**
+
+## 0007 + 0008 applied to the cloud project (2026-10-26)
+
+Project `zdtaludwhxnjutosrnvi` (BuffNdaHood62's Project, West EU). Procedure:
+`supabase/GO-LIVE-RUNBOOK.md`.
+
+- `supabase migration list` first: remote history already recorded 0001–0006, so
+  `migration repair` was not needed and `db push` applied exactly 0007 and 0008.
+  CLI 2.122.0 over `npx`, no Docker, no `pg_dump`, no password prompt.
+- Restore point: `db dump` needs a local `pg_dump`, which is not installed, so
+  instead of a dump there is a DDL **manifest** of the pre-push state in
+  `supabase/db/pre-0007-manifest.txt` (gitignored): the 16 `*_rbac`/`_org`
+  policies, 0001–0006 functions, 15 tables, zero triggers on
+  `profiles`/`audit_log`. That is the drift check, not a backup. The data itself
+  is fake and reproducible from `0003_seed.sql`; recovering the schema means
+  re-applying 0001–0006 onto an empty `public` schema.
+- Post-apply state: migrations 0001–0008 recorded; `profiles` now has
+  `requested_role`/`disabled_at`; `profiles_self` replaced by
+  `profiles_self_read` + `profiles_admin_read`; `orders` carries
+  `orders_read`/`orders_write`/`orders_update`; `www_clients`,
+  `www_client_visits`, `www_client_demographics`, `medical_reviews`,
+  `order_administrations`, `www_number_counters`, `invitations`, `auth_events`
+  exist; 12 triggers live (`audit_hash_chain`, `audit_immutable`,
+  `auth_events_immutable`, three registry immutability triggers,
+  `orders_content_immutable`, `profiles_guard`, the org security-setting guard and
+  audit, `www_demographics_audit`); 23 tables have policies; `delete`/`truncate`
+  revoked from `anon`/`authenticated`.
+- Gate checks, run as `set local role authenticated` inside rolled-back
+  transactions with injected `request.jwt.claims` (`supabase/db/check-*.sql`):
+  | Check | Result |
+  | --- | --- |
+  | unverified account, `patients` | **0 rows**, `current_org_id()` NULL |
+  | verified doctor, `patients` | 2 rows, correct org — RLS is not over-blocking |
+  | `update profiles set role='admin' where id=auth.uid()` | denied `42501` |
+  | order insert at `aal1` | denied `42501` (RLS) |
+  | order insert at `aal2` + `totp` `amr` 5s old | **inserted** |
+  | doctor with `disabled_at = now()` | **0 rows**, `current_org_id()` NULL |
+- The `aal2` row is a claim injection through the postgres role, not a real
+  second-factor session. It proves the SQL gate reads `amr` correctly; it does not
+  prove the GoTrue → `stepUpReason()` → `/login/step-up` path end to end. That
+  still needs a browser against a backend-configured build.
+- Rollback verified clean afterwards: probe order absent, `disabled_at` NULL
+  again, `audit_log` still 0 rows.
+- Open now: `require_step_up_for_orders = true` with **0 rows in
+  `auth.mfa_factors`** — nobody can author orders from a real session until a
+  factor is enrolled. GoTrue MFA has not been confirmed enabled in the Dashboard
+  from here. `michaelnnamdi62@gmail.com` has since been approved (see below).
+- **R-20 found, fixed and verified the same day.** Dry-running `approve_profile`
+  (inside a transaction, rolled back, nothing written) hit
+  `42883 function digest(text, unknown) does not exist` in `chain_audit_hash()`.
+  pgcrypto is in the `extensions` schema on this project while the 0007/0008
+  functions pin `search_path = public`, so `digest()` and `gen_random_bytes()` do
+  not resolve — and since `chain_audit_hash()` is the BEFORE trigger on every
+  `audit_log` insert, all audit writes failed. `0009_crypto_search_path_fix.sql`
+  widens those three functions to `public, extensions` (3 statements, `pglast`
+  clean); applied 2026-10-26 and `proconfig` confirmed on all three.
+- Approval then ran for real: as the seeded admin (`7b2ec287-…`),
+  `approve_profile('0cf4097a-…','doctor')` left `michaelnnamdi62@gmail.com` at
+  `doctor verified=true disabled=null`, with one `auth_events` row
+  (`profile_approved`) and one `audit_log` row (`approve profile`, actor = the
+  admin, `row_hash` computed, `prev_hash` NULL as the first link). The same
+  transaction, re-run as the approved user, returned
+  `current_org_id() = 11111111-…` and **2 patients** — the pending→approved
+  transition works in SQL end to end.
+- Sequence detail: the two rolled-back attempts consumed `auth_events` ids 1–2,
+  so the committed row is id 3. A rollback does not reuse a `nextval` — correct
+  behaviour, not a gap.

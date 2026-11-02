@@ -2,8 +2,12 @@
 
 Postgres schema, RLS and identity hardening for the EHR SPA. No backend was in
 the repo before; this is the storage swap the demo `useAuth`/`appendAudit` were
-written to accept. 0001-0006 were applied upstream; 0007 and 0008 are authored
-but not applied anywhere.
+written to accept. **0001–0009 are applied to project `zdtaludwhxnjutosrnvi`**
+(0001–0006 earlier; 0007, 0008 and the 0009 crypto fix on 2026-10-26, with the
+gate checks in `GO-LIVE-RUNBOOK.md` passing). `0010` — multi-organisation
+memberships, role instances and the permission matrix (ADR-0004) — is authored
+and verified in a rolled-back transaction but **not applied**. For any other
+project, start from `supabase migration list` — do not assume.
 
 ## What's here
 
@@ -20,7 +24,14 @@ but not applied anywhere.
 - `migrations/0008_identity_hardening.sql` — server-authoritative identity:
   admin-approved roles, invitations, `auth_events`, profile write lockdown,
   verified/revoked gates in every helper, AAL2 step-up for order writes.
-  Requires 0007. **Both 0007 and 0008 are authored, not applied.**
+  Requires 0007. **Both applied to `zdtaludwhxnjutosrnvi` on 2026-10-26.**
+- `migrations/0009_crypto_search_path_fix.sql` — required forward fix: hosted
+  pgcrypto lives in `extensions`, so the audit-hash functions needed
+  `search_path = public, extensions` or every audit write failed (R-20).
+- `migrations/0010_org_memberships_roles.sql` — base accounts, organisations
+  with an owner and shareable code, role instances, `role_permissions`,
+  memberships, and the invitation/join-request lifecycle (ADR-0004). **Authored,
+  not applied.**
 - `config.toml` — local Supabase CLI config (email confirmations on, OTP on).
 - `../scripts/bootstrap-supabase.mjs` — bootstrap (local or `--cloud`).
 
@@ -69,6 +80,10 @@ node scripts/bootstrap-supabase.mjs  # npx supabase start + db reset
 
 ## Setup (Supabase Cloud)
 
+**Read `GO-LIVE-RUNBOOK.md` before running this against a project that already
+has 0001–0006 applied.** The script just calls `db push`, and if the CLI's
+migration history is empty it re-applies `0001` and aborts on a duplicate policy.
+
 ```bash
 npx supabase login
 SUPABASE_PROJECT_REF=xxxx node scripts/bootstrap-supabase.mjs --cloud
@@ -111,31 +126,43 @@ either (ADR-0003).
 
 ## Verification checklist
 
-- [ ] `npm run build` green (typecheck gates it).
-- [ ] `npx supabase db reset` applies all 8 migrations with no errors. 0008 must
-      run after 0007; run its assertion block before trusting the result.
-- [ ] Compose a message in /messages → row lands in `messages` with `sent=true`; reload shows it under Sent.
-- Sign up a user → confirm email → profile row exists with `role='reception'`,
-  `verified=false`, `requested_role` set → the app lands on `/login/pending`
-  with "Account pending verification", the session is already signed out, and a
-  direct token still reads 0 patients. An admin
-  runs `select approve_profile('<user-id>', 'doctor')` to grant access.
-  The 5 seeded staff accounts are pre-verified by `0003_seed.sql`.
+Server-side, run on 2026-10-26 against `zdtaludwhxnjutosrnvi` (see
+`GO-LIVE-RUNBOOK.md` §6 for the exact SQL):
+
+- [x] 0001–0008 applied; `supabase migration list` shows all eight on the remote.
+- [x] Unverified profile reads **0** patients and `current_org_id()` is NULL,
+      while a verified doctor sees its org's rows (2 — this project has one org,
+      so it demonstrates the fail-closed floor, not cross-tenant separation).
+- [x] `update profiles set role='admin' where id=auth.uid()` → `42501`.
+- [x] Order insert at `aal1` → `42501`; the same insert with `aal2` and a
+      `totp` `amr` entry 5 seconds old → succeeds. The `aal2` case used injected
+      JWT claims as the postgres role, not a real factor.
+- [x] A profile with `disabled_at` set reads 0 rows on its next query, with no
+      token change. Set directly inside a rolled-back transaction; the
+      `set_profile_access()` RPC path itself is still untested.
+
+- [x] `0009` applied: an `audit_log` insert through `append_audit()` succeeds on
+      the hosted project and stores a `row_hash`. Until it landed, **no audit
+      write could succeed** and every admin RPC that logs errored (R-20).
+- [x] `approve_profile('<uuid>','doctor')` as the seeded admin flips a pending
+      account to `verified=true`, writes `auth_events` + `audit_log`, and the
+      account reads its org's 2 patients on the next query.
+
+Still open — none of these can pass until the app runs against a backend:
+
+- [ ] `npm run build` green with `VITE_SUPABASE_*` set (production boot, not
+      `StartupBlocked`).
 - [ ] Enrol a TOTP factor for a verified account → sign-in lands on `/login/mfa`
-  → wrong code shows an error, correct code reaches the app; reloading at
-  `password_ok` re-presents `/login/mfa` rather than skipping the factor.
-- [ ] As that user, `update profiles set role='admin' where id=auth.uid()` fails
-      (no update policy) and moving `org_id` fails even with a future policy
-      (column-guard trigger).
-- [ ] With a TOTP-enrolled account, open `/orders` at AAL1 (or after the 8-hour
-      `amr` window) → the step-up screen appears and the orders table is never
-      painted; completing password + TOTP returns to `/orders`.
-- [ ] Order insert at `aal1` fails (`42501`); with a fresh TOTP `amr` entry and
-      `aal2` it succeeds. `set_profile_access('<user-id>', false)` makes the next
-      read return 0 rows without a new token.
-- [ ] As that user, `select * from patients` returns ONLY your org's rows.
-- [ ] `insert into audit_log` as anon client → permission denied (RPC only).
-- [ ] `redeem_share('bogus')` → throws; valid token returns minimal JSON, 2nd call → ALREADY_CONSUMED.
+      → wrong code shows an error, correct code reaches the app. Zero factors are
+      enrolled today, so order authoring from a real session is blocked.
+- [ ] `/orders` at AAL1 shows the step-up screen and never paints the table.
+- [ ] Sign up → confirm email → `/login/pending` → `approve_profile` → dashboard.
+- [ ] Compose a message in `/messages` → row lands with `sent=true`; reload
+      shows it under Sent.
+- [ ] `insert into audit_log` as the anon client → permission denied (RPC only).
+- [ ] `redeem_share('bogus')` → throws; valid token returns minimal JSON, a 2nd
+      call → ALREADY_CONSUMED.
+- [ ] Moving `org_id` fails even under a future policy (column-guard trigger).
 
 ## Common pitfalls
 

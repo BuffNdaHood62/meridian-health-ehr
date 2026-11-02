@@ -4,6 +4,211 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-10-26 — Multi-organisation identity design (ADR-0004) + `0010` drafted
+
+Design and SQL for base accounts, organisation ownership, duplicate role
+instances and a real invitation lifecycle. Not applied to any database: the
+migration was executed end-to-end against the live project inside
+`begin; … rollback;` and every probe passed, which is what the evidence below
+means.
+
+### Added
+- `docs/adr/0004-multi-org-role-model.md` — decisions, ERD, access resolution,
+  onboarding, migration plan, impact analysis, edge cases, open questions.
+- `supabase/migrations/0010_org_memberships_roles.sql` (83 statements,
+  `pglast` clean):
+  - `org_memberships`, `org_role_instances`, `role_assignments`,
+    `role_permissions`, `org_join_requests`; `organizations.owner_user_id`,
+    `org_code`, `status`; `profiles.active_org_id`.
+  - `invitations` gains `role_key`, `role_instance_id`, `status`
+    (`sent/accepted/declined/expired/revoked`) and is guarded against
+    re-resolving a terminal invitation; the unused `role` column is dropped.
+  - `role_permissions` seeded **verbatim** from `0008`'s `role_allows()` CASE,
+    including its wildcard branches.
+  - Helpers rewritten in place — `current_org_id`, `current_role_keys`,
+    `is_admin`, `role_allows`, `role_can`, `is_active_member`, `is_org_owner`,
+    `is_org_member` — so all 44 RLS policy bodies stay untouched.
+  - RPCs: `create_organization`, `switch_active_org`,
+    `create_role_instance`, `retire_role_instance`, `assign_role`, `revoke_role`,
+    `suspend_membership`, `invite_member`, `accept_invitation`,
+    `decline_invitation`, `revoke_invitation`, `expire_invitations`,
+    `request_join`, `decide_join_request`, `transfer_ownership`,
+    `archive_organization`; `approve_profile`/`verify_profile` rewritten so the
+    documented bootstrap path still grants actual org access.
+  - Backfill from `profiles.org_id`/`role` into memberships + one slot per
+    (org, role, ordinal), plus a `DO` block that raises and aborts the migration
+    if any profile, org or role key fails to line up.
+  - `profiles.org_id`/`role` kept for one release as a cache written by
+    `sync_legacy_profile()`; `0011` will drop them.
+
+### Probe results (rolled back, nothing persisted)
+6 memberships / 6 assignments / 6 slots (`Admin-1, Doctor-1, Doctor-2, Lab-1,
+Nurse-1, Reception-1`); admin keeps `orders.insert = false`; reception gains no
+clinical writes; a doctor creates a second org, sees 0 patients there, switches
+back and sees 2 with roles `{doctor}`; `invite_member` returns a 64-char token
+whose stored hash differs, and revoke moves `sent → revoked`.
+
+### Defects the probes caught before commit
+1. No read path for the org switcher: membership and org reads were scoped to the
+   active org. Added `is_org_member()` and widened exactly two policies.
+2. `auth_events` still used the `0008` event vocabulary and rejected
+   `org_created` / `role_assigned` / `ownership_transferred`. Widened in `0010`.
+
+### Not done
+- `0010` is not applied — staging first, and the backfill assertions should run
+  there.
+- No client changes yet: `useAuth()` still exposes one role, and nav/`canAccess`
+  still key off it. ADR-0004's impact table is the work list.
+- R-21 (`lab`/`reception` can `SELECT notes`) is preserved, not fixed — that is a
+  clinical authorisation decision.
+
+---
+
+## 2026-10-26 — 0007 and 0008 applied to the Supabase project, gate checks green
+
+The migrations that the identity work had been waiting on are now live on project
+`zdtaludwhxnjutosrnvi`. This is the first time any SQL in this repo has executed
+against a real database, so several "authored, not applied" claims in the docs
+were replaced with observed results.
+
+### How it was applied
+- `npx supabase@2.122.0` with the user's browser login (the automatic login flow
+  cannot run in this non-TTY shell). No Docker, no `pg_dump`, no password prompt:
+  `migration list`, `link`, `db push` and `db query` all worked over the
+  Management API.
+- `supabase migration list` showed 0001–0006 already recorded remotely, so
+  `migration repair` was unnecessary and `db push` applied exactly 0007 → 0008.
+- Restore point: `db dump` needs a local `pg_dump`, which isn't installed. What
+  exists instead is a pre-push DDL manifest
+  (`supabase/db/pre-0007-manifest.txt`, gitignored) plus the fact that the schema
+  is reproducible from 0001–0006 in git and the data from `0003_seed.sql`. That is
+  a drift check, not a backup — R-15 is still open.
+
+### What the project looks like now
+`profiles` has `requested_role`/`disabled_at`; `profiles_self` is gone, replaced
+by select-only `profiles_self_read`/`profiles_admin_read`; the 0004 `*_rbac`
+policies are replaced by per-action policies across 23 tables; the WWW registry
+tables, `invitations` and `auth_events` exist; 12 guard/immutability/hash-chain
+triggers are attached; `delete`/`truncate`/`references` are revoked from
+`anon`/`authenticated`.
+
+### Gate checks (`set local role authenticated` + injected claims, all rolled back)
+| Check | Result |
+| --- | --- |
+| unverified account → `select count(*) from patients` | 0, `current_org_id()` NULL |
+| verified doctor → same query | 2 rows, correct org |
+| `update profiles set role='admin' where id=auth.uid()` | denied `42501` |
+| order insert at `aal1` | denied `42501` |
+| order insert at `aal2` + 5-second-old `totp` `amr` | inserted |
+| doctor with `disabled_at = now()` | 0 rows, `current_org_id()` NULL |
+
+Rollback verified clean: probe order absent, `disabled_at` NULL, `audit_log`
+still empty.
+
+### What this does NOT prove
+The `aal2` row used JWT claims injected by the postgres role. GoTrue MFA has not
+been confirmed enabled in the Dashboard, `auth.mfa_factors` has **0 rows**, and
+the Supabase adapter has still never run in a browser. So the SQL gate is proven
+and the end-to-end step-up path is not — and with
+`require_step_up_for_orders = true` plus no enrolled factor, real sessions
+cannot author orders right now. One existing account
+(`michaelnnamdi62@gmail.com`, `doctor`, `verified=false`) is now correctly
+pending and needs `approve_profile`.
+
+### Defect found by the next step (R-20)
+Dry-running `approve_profile` on that account — inside a transaction, rolled back,
+nothing written — failed before it could:
+
+```
+ERROR: 42883: function digest(text, unknown) does not exist
+QUERY: new.row_hash := encode(digest(v_payload, 'sha256'), 'hex')
+CONTEXT: PL/pgSQL function chain_audit_hash() line 18 at assignment
+```
+
+`pg_extension` puts pgcrypto in the `extensions` schema on this project, while
+every function in 0007/0008 pins `set search_path = public`, so `digest()` and
+`gen_random_bytes()` don't resolve. Because `chain_audit_hash()` is the BEFORE
+trigger on all `audit_log` inserts, the blast radius is every audit write:
+`append_audit()` (which `src/data/api.ts` calls for each audited action in backend
+mode), `approve_profile`, `set_profile_access`, `set_profile_role`,
+`update_my_profile`, `create_invitation`/`accept_invitation`, and the audit
+triggers on demographics and org settings.
+
+### 0009 applied and the approval completed
+`0009_crypto_search_path_fix.sql` widens those three functions to
+`public, extensions` without touching their bodies. Applied, and `proconfig`
+confirms all three. The longer-term shape is the built-in `sha256()` (PG 17.6
+here) with no pgcrypto in the hash chain at all — deliberately kept out of an
+emergency fix.
+
+Then, as the seeded admin session (`set local role authenticated` with the admin's
+claims), `approve_profile('0cf4097a-…','doctor')` committed: `michaelnnamdi62@gmail.com`
+is now `doctor verified=true disabled=null`, with one `auth_events` row
+(`profile_approved`) and one `audit_log` row (`approve profile`, actor = the admin,
+`row_hash` computed, `prev_hash` NULL as the chain's first link). Re-reading the
+same transaction as the approved user returns `current_org_id()` = the org and
+**2 patients**, so the pending→approved transition works end to end in SQL.
+Two notes: the rolled-back attempts consumed `auth_events` ids 1–2 so the
+committed row is id 3 (a rollback never reuses a `nextval`), and because the
+approval ran under injected claims, a real approval should come from a real admin
+session once the app can sign in — otherwise the trail records whoever the claims
+name.
+
+R-06 is back to **Partially closed** and R-20 is **Closed**; the six green probes
+above were unaffected because none of them wrote audit.
+
+### Docs corrected
+`AGENTS.md` (migration status, local-environment note about the CLI working),
+`docs/risk-register.md` (R-05 closed, R-17/R-18/R-19 closed with observed
+evidence, R-04/R-06/R-08/R-14 reworded, new apply evidence section, "What the app
+still must not do" rewritten to name the blockers that remain),
+`docs/adr/0003-identity-architecture.md` status + consequences,
+`supabase/README.md` checklist split into verified-versus-open, and both
+migration headers. Procedure recorded in `supabase/GO-LIVE-RUNBOOK.md`.
+
+---
+
+## 2026-10-26 — Deploy config switched to the production (cloud) build
+
+`vercel.json` now runs `npm run build` instead of `npm run build:demo`. The
+deployed URL is therefore a production-mode artifact: real Supabase auth and
+data, or `StartupBlocked` if the backend env is missing. The demo artifact is
+still produced by `npm run build:demo` (local previews, `.env.demo`), but it is
+no longer what a push deploys.
+
+### Required before the next deploy
+- Vercel project env (build-time, Vite inlines them): `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_ANON_KEY` (**anon only**), `VITE_SUPPORT_EMAIL`,
+  `VITE_SUPPORT_PHONE`. Do **not** set `VITE_APP_MODE=demo` in Vercel.
+- Apply `0007` then `0008` to the Supabase project and run the assertion block
+  at the foot of `0008`. Until `0008` is applied, an account created against the
+  cloud project is not actually gated: `current_org_id()` ignores `verified`
+  (R-18) and signup metadata still chooses the role (R-17). `0008` is authored,
+  not executed — no Postgres/Supabase CLI in this environment.
+- Enable email confirmation and TOTP in Dashboard → Auth. TOTP **enrolment** has
+  no UI yet (only challenge/step-up), so enrol the first factor out-of-band.
+- First admin bootstrap after `0008`: direct SQL update in the migration header
+  (no verified admin exists yet); approval of later accounts is
+  `select approve_profile('<user-id>', '<role>')`.
+
+### Behaviour change
+- A production deploy without backend env now renders the fail-closed
+  `StartupBlocked` screen instead of the fake-data demo. That is the intended
+  gate, but it means the config change must land **after** the Vercel env is in
+  place, not before.
+- Demo sign-in, the demo role picker and browser-local signup no longer exist on
+  the deployed URL once this build ships.
+
+### Runbook
+- `supabase/GO-LIVE-RUNBOOK.md` is the ordered procedure for the remaining
+  gates: applying `0007`/`0008` (including the `supabase migration repair` step
+  that keeps `db push` from re-applying `0001`), GoTrue settings, first-admin
+  bootstrap, out-of-band TOTP enrolment, the four RLS checks that decide whether
+  the apply passed, and the Vercel env order. `supabase/README.md` now points at
+  it from the cloud-setup section.
+
+---
+
 ## 2026-10-26 — IdentityAdapter + identity state machine (client seam)
 
 The login architecture decided in ADR-0003 is now implemented on the client.
@@ -71,8 +276,9 @@ replaced by an explicit state machine.
 - No TOTP **enrolment** UI; factors must be enrolled out-of-band. No admin UI for
   `approve_profile` or invitations (SQL only).
 - The Supabase adapter has not been run against a live project — only demo mode
-  has browser evidence. `0008` is still authored, not applied, so the server-side
-  half of this seam is untested end-to-end.
+  has browser evidence. `0008` was unapplied when this was written; it was
+  applied later the same day (see the apply entry above), and the adapter is
+  still the part with no browser evidence.
 
 ---
 

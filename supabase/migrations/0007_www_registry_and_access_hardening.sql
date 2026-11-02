@@ -14,9 +14,11 @@
 --      signed orders.
 --   5. Tamper-evident (hash-chained) audit trail.
 --
--- STATUS: authored, NOT APPLIED. Run against a STAGING project first
--- (`supabase link --project-ref <staging> && supabase db push`), then execute
--- the RLS matrix assertions at the bottom of this file as a smoke test.
+-- STATUS: APPLIED to project zdtaludwhxnjutosrnvi on 2026-10-26 via
+-- `supabase db push`; the RLS matrix probes in supabase/GO-LIVE-RUNBOOK.md §6
+-- ran green and are recorded in docs/risk-register.md. For any other project
+-- this is still unexecuted SQL: check `supabase migration list` first, run on
+-- staging, and execute the RLS matrix assertions at the bottom as a smoke test.
 -- Do not apply to a project holding real PHI without a tested restore point.
 -- ============================================================================
 

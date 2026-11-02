@@ -24,9 +24,10 @@ npm-debug.log*
 # committed or `npm run build:demo` silently produces a production-mode bundle.
 !.env.demo
 
-# Supabase local CLI artifacts
+# Supabase local CLI artifacts, and the scratch dumps/probe scripts that
+# `supabase db query -f` and the go-live runbook write here.
 supabase/.temp/
-supabase/db/*.sql
+supabase/db/
 
 # Agent-local state (memory, sessions) — never committed
 .workbuddy-ai/

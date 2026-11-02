@@ -1,7 +1,7 @@
 # ADR-0003 — Identity is server-authoritative; GoTrue + TOTP; the doctor code stays a view lock
 
 Date: 2026-10-26
-Status: Accepted — client seam implemented; `0008` authored, not applied (2026-10-26)
+Status: Accepted — client seam implemented; `0008` applied to project `zdtaludwhxnjutosrnvi` and its gates verified (2026-10-26)
 Relates to: `docs/risk-register.md` R-14, R-17, R-18, R-19; `supabase/migrations/0008_identity_hardening.sql`; `src/auth.tsx`, `src/identity/*`, ADR-0002
 
 ## Context
@@ -192,6 +192,12 @@ interface IdentityAdapter {
 - Email confirmation must stay on. A session without a confirmed email is not a
   supported state.
 - Applying `0008` without enrolling TOTP blocks order writes. That is deliberate
-  and audited; staging must run the assertion block at the foot of the migration.
-- `0008` is authored, not executed. No Postgres/Supabase CLI exists in this
-  environment; applying it to a staging project remains a human gate.
+  and audited, and it is the current state of the cloud project: `0008` is
+  applied with `require_step_up_for_orders = true` and zero enrolled factors, so
+  no real session can author an order until one is enrolled out-of-band.
+- `0008` was applied to `zdtaludwhxnjutosrnvi` on 2026-10-26 through
+  `npx supabase db push`, and the four gate checks ran green
+  (`docs/risk-register.md`, "0007 + 0008 applied to the cloud project"). The
+  `aal2` result came from injected JWT claims as the postgres role, so the SQL
+  gate is proven but the GoTrue → `stepUpReason()` → `/login/step-up` path is
+  still unexercised end to end.

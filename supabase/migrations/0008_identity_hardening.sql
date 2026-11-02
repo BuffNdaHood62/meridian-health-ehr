@@ -28,8 +28,10 @@
 --      single-use, email-bound invitations and a synchronous auth_events trail.
 --
 -- REQUIRES 0007 (role_allows, forbid_mutation, registry tables). Apply 0007
--- first. STATUS: authored, NOT APPLIED — no Postgres/Supabase CLI in this
--- environment. Run on staging and execute the assertion block at the bottom.
+-- first. STATUS: APPLIED to project zdtaludwhxnjutosrnvi on 2026-10-26; the four
+-- gate checks passed and are recorded in docs/risk-register.md. On any other
+-- project treat it as unexecuted: check `supabase migration list`, run on
+-- staging and execute the assertion block at the bottom.
 --
 -- GoTrue settings this migration assumes (configure in Dashboard, not SQL):
 --   * Confirm email = ON (a session without a confirmed email must not exist).
