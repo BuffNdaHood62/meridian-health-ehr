@@ -207,6 +207,16 @@ no longer what a push deploys.
   the apply passed, and the Vercel env order. `supabase/README.md` now points at
   it from the cloud-setup section.
 
+### Found while verifying the production deploy (2026-10-30)
+After `vercel.json` shipped production mode, the live login screen still rendered
+the "or explore with sample data / Enter Demo Workspace" block — that divider and
+button were never gated on `DEMO_MODE`, so a clinical URL was advertising a fake
+login path. `src/pages/Login.tsx` now wraps both in `DEMO_MODE`. Verified both
+sides: the deployed build returns GoTrue's own "Invalid login credentials" (so the
+URL and anon key are inlined and the backend is really reached), and the rebuilt
+demo artifact still shows the demo entry. `/demo` itself was already honest — it
+disables the accounts when a backend is configured.
+
 ---
 
 ## 2026-10-26 — IdentityAdapter + identity state machine (client seam)

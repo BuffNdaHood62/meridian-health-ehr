@@ -31,3 +31,8 @@ supabase/db/
 
 # Agent-local state (memory, sessions) — never committed
 .workbuddy-ai/
+
+# Vercel CLI project link + pulled env.
+# `.env.local` is already covered by `.env.*` above; do NOT add a blanket
+# `.env*` here — `.env.example` and `.env.demo` are committed on purpose.
+.vercel

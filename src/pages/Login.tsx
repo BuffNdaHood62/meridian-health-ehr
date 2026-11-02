@@ -164,20 +164,24 @@ export default function Login() {
             </button>
           </form>
 
-          <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
-            <span className="h-px flex-1 bg-slate-200" />
-            or explore with sample data
-            <span className="h-px flex-1 bg-slate-200" />
-          </div>
+          {DEMO_MODE && (
+            <>
+              <div className="my-6 flex items-center gap-3 text-xs text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                or explore with sample data
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
 
-          <button
-            type="button"
-            onClick={() => navigate("/demo", { state: { from } })}
-            data-testid="login-demo"
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            <Fingerprint className="h-4 w-4 text-brand-600" /> Enter Demo Workspace
-          </button>
+              <button
+                type="button"
+                onClick={() => navigate("/demo", { state: { from } })}
+                data-testid="login-demo"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                <Fingerprint className="h-4 w-4 text-brand-600" /> Enter Demo Workspace
+              </button>
+            </>
+          )}
 
           <p className="mt-5 text-center text-sm text-slate-500">
             Need an account?{" "}
