@@ -2,7 +2,7 @@
 
 Date: 2026-10-26
 Status: Proposed — `0010_org_memberships_roles.sql` authored; run end-to-end against the live project inside a rolled-back transaction (see Evidence), not applied
-Relates to: `docs/risk-register.md` R-04, R-05, R-14, R-20, R-21; `supabase/migrations/0007_www_registry_and_access_hardening.sql`, `0008_identity_hardening.sql`, `0010_org_memberships_roles.sql`; `src/identity/*`
+Relates to: `docs/risk-register.md` R-04, R-05, R-14, R-20, R-21, R-22; `supabase/migrations/0007_www_registry_and_access_hardening.sql`, `0008_identity_hardening.sql`, `0010_org_memberships_roles.sql`; `src/identity/*`; ADR-0005 (single owner + invite-only provisioning, which narrows decision 1 and drops `create_organization`)
 
 ## Context
 
@@ -46,6 +46,12 @@ accountability, which is the point of `0008`.
 
 `organizations.org_code` is the shareable identifier (`ORG-7K4Q`). It is a
 *handle*, not a secret, and it is what `request_join` accepts.
+
+> **Superseded in part by ADR-0005.** The platform is single-organisation and the
+> owner is one named human, so `create_organization()` is dropped in `0011`
+> rather than left open to any verified account. Memberships, role instances and
+> the permission matrix still stand — they are what make the membership table the
+> single source of tenancy, which is the fix for auto-granted org access.
 
 ### 2. Roles stay a fixed vocabulary; instances are slots
 

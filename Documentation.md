@@ -4,6 +4,114 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-11-03 — ADR-0005: one platform owner, invitation-only provisioning (`0011` drafted)
+
+Decisions taken: the owner is a **new dedicated account** (not a handover of
+`michaelnnamdi62@gmail.com`, which stays a `doctor` member), the platform is
+**single-organisation**, the service-key **Edge Function is deferred**, and a
+**break-glass admin is retained**.
+
+### Why this was needed
+Two doors were open by accident rather than decision: `0001:15` declares
+`profiles.org_id not null`, so `handle_new_user()` must attach every signup to the
+first clinic (`0001:204`), and `0010`'s `create_organization()` would let any
+verified account mint a new org. Verification gated the *role*, never the
+*tenancy*. ADR-0004's open question 4 is now answered, and ADR-0004 decision 1 is
+marked partly superseded.
+
+### Added
+- `docs/adr/0005-invite-only-provisioning.md`.
+- `supabase/migrations/0011_platform_owner_invite_only.sql` (20 statements,
+  `pglast` clean, **not applied**, requires `0010`):
+  `public.platform` single-row owner registry with a `break_glass_user_id` that
+  cannot equal the owner; `is_platform_owner()` / `is_break_glass_admin()` /
+  `platform_can_manage()`, each requiring `verified and disabled_at is null`;
+  `org_id` made nullable with `handle_new_user()` creating a base account and no
+  membership; `create_organization()` dropped; `assign_role()` and
+  `invite_member()` refuse to grant the `admin` role to anyone but the owner;
+  `transfer_platform_ownership()` requires step-up; `set_break_glass_admin()`
+  owner-only; `auth_events` vocabulary extended; a written break-glass recovery
+  procedure; and §8, an assertion block that aborts the migration if the `platform`
+  row was never bootstrapped.
+- Risk register: **R-22** (open self-registration auto-grants tenancy) added and
+  folded into the "must not hold real PHI" list.
+
+### Verified by dry-run, then rolled back
+`begin; 0010; 0011; …; rollback;` against the live project, twice.
+
+1. Without a `platform` row, `0011` aborts as designed:
+   `PLATFORM_BOOTSTRAP_REQUIRED: expected exactly 1 platform row, found 0.` — after
+   0010's whole body and 0011 §1–§7 executed, so this is not a syntax-only pass.
+2. With a bootstrapped owner and break-glass row, probed as `authenticated` with
+   injected claims: `profiles.org_id` nullable; owner `is_platform_owner()` true and
+   still reading its 2 patients; ownership transfer at `aal1` → `STEP_UP_REQUIRED`;
+   `create_organization('Sneak Clinic')` → function does not exist; break-glass
+   `is_admin()` true, `invite_member(email,'nurse')` ok (64-char token) but
+   `invite_member(email,'admin')` and `assign_role(user, admin slot)` →
+   `ADMIN_GRANT_OWNER_ONLY`.
+3. Post-rollback: no `platform`, no `org_memberships`, `org_id` NOT NULL again,
+   `profiles` still 6 rows.
+
+### Explicitly not done
+Nothing is applied. The cutover order is recorded in `GO-LIVE-RUNBOOK.md`: create
+the owner account **while public sign-up still works** → `0010` → `0011` →
+bootstrap the `platform` row → disable sign-up in GoTrue → client PR (`/signup`
+demo-only, membership-less "awaiting assignment" screen, owner-only Members/Roles).
+The client lockdown is deliberately not written yet, so no UI currently claims
+invite-only access — and `AGENTS.md` now says explicitly not to describe it as
+current behaviour.
+
+---
+
+## 2026-11-03 — Production URL went live, and the seeded demo credentials went with it
+
+`vercel.json` (`npm run build`) is deployed, so `meridian-health-ehr.vercel.app`
+now runs the backend-configured build. Verified in a browser: real sign-in, no
+`StartupBlocked`, no demo banner, and a bad credential returns GoTrue's own
+"Invalid login credentials" — the URL and publishable key are correctly inlined.
+The support-contact placeholders are gone from the bundle, so the real contact is
+deployed.
+
+### Shared demo credential was live on a public URL
+Going production made `0003_seed.sql`'s own warning true: five staff accounts
+existed with the password printed in this repo. Confirmed first — all five shared
+the hash `$2b$10$eXdWw…`, identical to the committed hash for `DemoPassw0rd!`.
+
+Closed it (`supabase/db/revoke-seeded-accounts.sql`, one transaction, chosen from
+three options so the project would not end up admin-less):
+
+- `disabled_at = now()` on `doctor@`, `nurse@`, `lab@`, `reception@www.clinic` —
+  revocation, not deletion; rows and history remain.
+- `admin@www.clinic` kept as break-glass, password replaced in-database with
+  `crypt(gen_random_bytes(24), gen_salt('bf',10))`. The value is generated inside
+  the statement, so nobody holds it; reuse requires a Dashboard password reset.
+- Five `auth_events` (`access_changed`) and five `audit_log` rows written; all six
+  audit rows carry `row_hash`, which is more evidence the 0009 fix covers direct
+  inserts too.
+
+Impersonation probes: revoked doctor → `current_org_id()` NULL, `role_allows`
+false, 0 patients; the real account → org resolves, 2 patients, order writes
+permitted (still subject to step-up). Two things worth recording: `pgcrypto`
+must be schema-qualified as `extensions.*` in any new SQL — the same layout that
+caused R-20 — and `current_role_keys()` does not exist yet, because `0010` is
+still unapplied.
+
+### Also
+- Production login no longer offers the demo workspace (`990badb`); `/demo`
+  remains reachable by URL and still says the accounts are disabled.
+- `.gitignore` keeps the Vercel CLI's `.vercel` entry but drops the blanket
+  `.env*` it added, which would have ignored `.env.example` and `.env.demo` —
+  both are committed on purpose.
+- `GO-LIVE-RUNBOOK.md` gains §5b for this cleanup, and R-14 is reworded: the
+  shared-credential half is closed, the MFA-enrolment half is not.
+
+### Still true after all of this
+`auth.mfa_factors` is **0** with `require_step_up_for_orders = true`, so order
+authoring fails closed for every real session; and nobody has signed into the
+deployed app as a real user yet.
+
+---
+
 ## 2026-10-26 — Multi-organisation identity design (ADR-0004) + `0010` drafted
 
 Design and SQL for base accounts, organisation ownership, duplicate role

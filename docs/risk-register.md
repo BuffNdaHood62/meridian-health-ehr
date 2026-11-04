@@ -36,7 +36,7 @@ notification) on the NDPA track.
 | R-11 | CDS rules are a hand-written substring matcher, not a drug reference | `src/utils/cds.ts` (`ALLERGY_RULES`, 5 rules) | Fixed the data-source defect (it evaluated mock patients instead of the loaded chart); still needs RxNorm/validated knowledge base + clinical sign-off before real use | **Partially closed** — see R-12 |
 | R-12 | CDS now reads the caller-supplied patient, but the ruleset itself is unvalidated | `src/utils/cds.ts` | Provenance, versioning, override-with-reason logging, clinical governance review | **Open** |
 | R-13 | PHI residue already on clinic browsers from demo use | Any device that ran the demo | Export → validate → import script, then clear `www-*` stores; document as a migration-window task, not a code change | **Open** |
-| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `LoginMfa.tsx`, `LoginStepUp.tsx`, `Sidebar.tsx` footer states it plainly | `0008` gates order writes on GoTrue AAL2/TOTP and adds `set_profile_access` revocation (applied 2026-10-26); challenge and step-up screens exist (`/login/mfa`, `/login/step-up`) | **Partially mitigated** — server gate live; TOTP **enrolment**, admin approval/invitation UI, named-account policy and idle auto-logoff remain (0 factors enrolled today) |
+| R-14 | Shared accounts / no MFA / no idle auto-logoff | `Login.tsx`, `LoginMfa.tsx`, `LoginStepUp.tsx`, `Sidebar.tsx` footer states it plainly | `0008` gates order writes on GoTrue AAL2/TOTP and adds `set_profile_access` revocation (applied 2026-10-26); challenge and step-up screens exist (`/login/mfa`, `/login/step-up`). **The five seeded staff accounts were closed on the live project 2026-11-03**: four revoked via `disabled_at`, `admin@www.clinic` kept as break-glass with its password replaced by a value nobody holds | **Partially mitigated** — shared-credential exposure closed; TOTP **enrolment** UI, admin approval/invitation UI, named-account policy and idle auto-logoff remain (0 factors enrolled today) |
 | R-15 | No backups, no DR runbook, no monitoring, no CSP | infrastructure, none in repo | Phase 3/4: PITR + quarterly restore rehearsal, IaC, PHI-redacting log sink, Sentry, CSP after retiring `vite-plugin-singlefile` | **Open** |
 | R-16 | The verification gates did not execute the data layer: `demoFallback()` threw in the *demo* artifact (gated on backend presence, not mode) while tests/typecheck/lint all passed, and unbacked security copy survived on the desktop-only Login panel | `src/data/api.ts`, `src/data/api.test.ts`, root AGENTS.md Verification | Fixed 2026-10-20: gate keys on `DEMO_DATA_ALLOWED`; `api.test.ts` asserts loaders resolve; a standing rule requires loading built `dist/index.html` in a browser before claiming a screen works | **Closed (2026-10-20)** |
 | R-17 | Any signed-in user could make themselves an admin: signup role came from client metadata (`0001:211`) and `profiles_self` allowed `UPDATE` of the whole row (`0001:256`) | `supabase/migrations/0001_init.sql`, signup in `src/identity/supabase-adapter.ts` | `0008` stores `requested_role` only, starts accounts as reception + unverified, replaces the policy with select-only, moves role changes to audited admin RPCs, and adds a column-guard trigger. The adapter drops the session `signUp` creates and reports `unverified` | **Closed** — applied 2026-10-26; probe as `authenticated`: `update profiles set role='admin' where id=auth.uid()` → `42501 permission denied for table profiles`. The legitimate half also now works: `approve_profile` ran as the seeded admin and flipped a pending account to `doctor verified=true` (R-20 fixed the audit write it depends on) |
@@ -44,16 +44,18 @@ notification) on the NDPA track.
 | R-19 | Step-up was demo-only: `RouteAuthenticationGate` returned `<Outlet/>` whenever Supabase was configured, so backend mode had no recent-auth check on `/orders` | `RouteAuthenticationGate` in `src/auth.tsx`, `stepUpReason()` in `src/identity/supabase-adapter.ts` | The gate now calls `stepUpReason()` in every mode and routes to `/login/step-up`; `0008` requires GoTrue AAL2 + recent TOTP `amr` for order authoring/administration; org switch defaults on and downgrades require step-up + audit | **Closed** — applied 2026-10-26; order insert at `aal1` → `42501 new row violates row-level security policy`, same insert with `aal2` + a fresh `totp` `amr` entry → succeeds |
 | R-20 | Every `audit_log` write fails on the hosted project, so `append_audit()` — and with it `approve_profile`, `set_profile_access`, `set_profile_role`, `update_my_profile`, invitation creation/redemption and the audited app actions — error out | `chain_audit_hash()` in `0007`, `create_invitation`/`accept_invitation` in `0008`; Supabase installs pgcrypto in the `extensions` schema while these pin `set search_path = public` | Found 2026-10-26 by dry-running `approve_profile` (`42883 function digest(text, unknown) does not exist`). `0009_crypto_search_path_fix.sql` widens those three functions to `public, extensions` without touching their bodies; the longer-term shape is the built-in `sha256()` on PG 17 and no pgcrypto at all | **Closed** — `0009` applied 2026-10-26; `approve_profile` then wrote its audit row on the hosted project (`action=approve`, `actor=admin`, `row_hash` computed). Longer-term shape is still the built-in `sha256()` with no pgcrypto dependency |
 | R-21 | Role wildcards grant **read access to every entity** to every role: `role_allows()` returns true for `select` regardless of entity, so `lab` and `reception` can read `notes` (and `history`, `medications`, …). The "lab cannot read notes" expectation in the `0007` assertion comments is not what the code does | `role_allows()` CASE in `0008:197`, consumed by `notes_read`/`history_read`/`medications_read` in `0007:480-486` | `role_permissions` in `0010` makes the matrix one row per `(role, entity, action)`, so tightening is a data change, not a helper rewrite. Preserved verbatim in `0010` because narrowing clinical read access is a clinical decision | **Open** — documented, behaviour unchanged; needs sign-off on which roles may read notes/history/medications |
+| R-22 | Open self-registration auto-grants **tenancy**: anyone can call `/signup`, and the trigger attaches the new profile to the first organisation because `profiles.org_id` is `not null`. Verification gates the *role*, not the *org*, so an unapproved stranger is already inside a clinic's tenant boundary | `0001:15` (`org_id not null`), `handle_new_user()` at `0001:204-213`, `src/pages/Signup.tsx`, `signup()` in `src/identity/supabase-adapter.ts` | ADR-0005: create accounts only by owner action, disable public sign-up in GoTrue, and let `0011` make `org_id` nullable so `handle_new_user` attaches nothing — no membership means `current_org_id()` is NULL and every policy fails closed. `create_organization()` dropped | **Open** — `0011` authored and dry-run verified (rolled back), not applied. Until then the live project still admits self-signups |
 
 ## What the app still must not do
 
 The identity and access defects (R-05, R-17, R-18, R-19, R-20) are now enforced
 and verified by the live database. They are not the remaining blockers. Until
-**R-04, R-06, R-08, R-12, R-13, R-14, R-15 and R-21** are closed this build must
+**R-04, R-06, R-08, R-12, R-13, R-14, R-15, R-21 and R-22** are closed this build must
 not hold real patient records: clinical records still live in browser storage, the
 WWW-number and record-migration paths are unwired, the CDS ruleset is
-unvalidated, no TOTP factor is enrolled, there are no backups/monitoring/CSP, and
-every role can currently read every entity including clinical notes.
+unvalidated, anyone can still sign up and be attached to the clinic, no TOTP
+factor is enrolled, there are no backups/monitoring/CSP, and every role can
+currently read every entity including clinical notes.
 
 Demo mode remains the only approved use, and the demo banner plus the print/email
 watermark exist so that a demo artifact cannot be mistaken for a clinical
@@ -182,3 +184,71 @@ Project `zdtaludwhxnjutosrnvi` (BuffNdaHood62's Project, West EU). Procedure:
 - Sequence detail: the two rolled-back attempts consumed `auth_events` ids 1–2,
   so the committed row is id 3. A rollback does not reuse a `nextval` — correct
   behaviour, not a gap.
+
+## Seeded demo credentials closed on the live project (2026-11-03)
+
+The site has been serving production mode since `vercel.json` flipped, which made
+`0003_seed.sql`'s own warning live: five staff accounts on a public clinical URL
+sharing the password printed in this repo. Confirmed before acting — all five had
+the identical hash `$2b$10$eXdWw…`, i.e. exactly the committed hash for
+`DemoPassw0rd!`.
+
+Action taken (`supabase/db/revoke-seeded-accounts.sql`, one transaction):
+
+- `disabled_at = now()` on `doctor@`, `nurse@`, `lab@`, `reception@www.clinic`.
+  Access revocation, not deletion: the rows and their clinical history stay, and
+  `current_org_id()` now resolves NULL for them.
+- `admin@www.clinic` kept as break-glass, but its password was replaced in-place
+  with `crypt(gen_random_bytes(24), gen_salt('bf',10))` — generated inside the
+  statement, so no one holds it, including this agent. To use that account again,
+  set a new password in Dashboard → Authentication → Users.
+- Five `auth_events` rows (`access_changed`) and five `audit_log` rows written;
+  all six audit rows carry `row_hash`, so the 0009 fix held for direct inserts too.
+
+Verified by impersonation probes (`supabase/db/probe-revoked.sql`):
+
+| Probe | Result |
+| --- | --- |
+| revoked doctor | `current_org_id()` NULL, `role_allows('patients','select')` false, patients **0** |
+| your account | org resolves, patients **2**, `role_allows('orders','insert')` true |
+
+Remaining exposure on this project: no TOTP factor is enrolled, so order writes
+still fail closed for real sessions, and the break-glass admin cannot be used
+until its password is reset.
+
+## Invite-only model drafted and dry-run verified (2026-11-03)
+
+ADR-0005 (decisions: new dedicated owner account, single organisation, Edge
+Function deferred, break-glass admin retained) and
+`supabase/migrations/0011_platform_owner_invite_only.sql` are authored. Neither is
+applied. `0010` is still unapplied too, so `0011` was exercised as a chain:
+`begin; 0010; 0011; …; rollback;`.
+
+Two runs, both rolled back:
+
+1. **Guard fires.** 0010 + 0011 with no `platform` row aborted exactly as intended:
+   `PLATFORM_BOOTSTRAP_REQUIRED: expected exactly 1 platform row, found 0. Run the
+   insert from this file's header step 3, then re-apply.` The whole 0010 body and
+   0011 §1–§7 executed before that point, so nothing is a syntax-only pass.
+2. **Behaviour probes** with a stand-in owner and break-glass row inserted, all as
+   `authenticated` with injected claims:
+
+   | Probe | Result |
+   | --- | --- |
+   | `profiles.org_id` after `0011` | nullable — self-signup can no longer be force-attached |
+   | owner `is_platform_owner()` | true; reads its org's 2 patients |
+   | owner `transfer_platform_ownership()` at `aal1` | `STEP_UP_REQUIRED` |
+   | `create_organization('Sneak Clinic')` | `function … does not exist` (dropped) |
+   | break-glass `is_break_glass_admin()` / `is_admin()` | true / true |
+   | break-glass `invite_member(email,'admin')` | `ADMIN_GRANT_OWNER_ONLY` |
+   | break-glass `assign_role(user, admin slot)` | `ADMIN_GRANT_OWNER_ONLY` |
+   | break-glass `invite_member(email,'nurse')` | ok, 64-char token |
+
+Post-rollback check: no `platform`, no `org_memberships`, `org_id` NOT NULL again,
+`profiles` still 6 rows.
+
+Not yet done for R-22: applying `0010`→`0011`, creating the owner account **while
+public sign-up still works**, bootstrapping the `platform` row, disabling sign-up
+in GoTrue, and the client-side lockdown (`/signup` demo-only, `signup()` returning
+the invitation-only error, an "awaiting assignment" screen for membership-less
+accounts).

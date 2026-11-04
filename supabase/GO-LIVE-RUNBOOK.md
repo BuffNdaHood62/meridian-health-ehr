@@ -7,10 +7,17 @@ still must not hold real patient records.
 
 ## Status on the cloud project (2026-10-26)
 
-Sections 1–3 and 6 are **done** on `zdtaludwhxnjutosrnvi`: `db push` applied 0007
-then 0008, the schema is confirmed, and all six gate probes ran green (evidence
-table in `docs/risk-register.md`). Sections 4, 5 and 7 are **not done**, and they
-are what actually stands between this project and a working clinical sign-in:
+Sections 1–3, 5b, 6 and 7 are **done** on `zdtaludwhxnjutosrnvi`: `db push` applied
+0007 then 0008 and then the 0009 fix, the schema is confirmed, the six gate probes
+ran green, the seeded credentials are closed, and the production URL is live.
+Sections 4 and 5 (MFA settings, one enrolled factor) and the ADR-0005 cutover are
+**not done** — they are what stands between this project and a usable clinical
+sign-in.
+
+Everything here runs against a **Supabase project**, not the browser. The Supabase
+CLI works from this machine through `npx supabase` for `link`, `migration list`,
+`db push` and `db query` (no Docker, no password prompt); `db dump` does not,
+because it shells out to a local `pg_dump` that isn't installed.
 
 - [x] **Blocker cleared — `0009` applied.** Dry-running `approve_profile` (§5) hit
       `42883 function digest(text, unknown) does not exist` in
@@ -20,6 +27,14 @@ are what actually stands between this project and a working clinical sign-in:
       `set_profile_access`, `set_profile_role`, `update_my_profile`,
       `create_invitation`/`accept_invitation` and the audited app actions (R-20).
       Applied 2026-10-26; the audit write now succeeds.
+- [x] §5b **Seeded demo credentials closed (2026-11-03)** — four staff accounts
+      revoked via `disabled_at`, `admin@www.clinic` retained as break-glass with an
+      unknown password. Verified by impersonation probes.
+- [x] §7 Vercel env vars set, `vercel.json` pushed (`npm run build`), and the
+      production URL verified live 2026-11-03: real sign-in renders, no
+      `StartupBlocked`, no demo banner or demo entry, and a bad credential returns
+      GoTrue's own "Invalid login credentials" — so the anon key is inlined and the
+      backend is genuinely reached.
 - [ ] §4 GoTrue: confirm **Confirm email = ON** and **TOTP = ON** in the
       Dashboard. Not verified from here — the CLI does not report auth settings.
 - [ ] §5 First admin bootstrap + one enrolled TOTP factor. `auth.mfa_factors`
@@ -32,18 +47,23 @@ are what actually stands between this project and a working clinical sign-in:
       the actor recorded in `auth_events`/`audit_log` is whoever the claims name, so
       a real approval should come from a real admin session once the app can sign
       in.
-- [ ] §7 Vercel env vars, then push `vercel.json`, then the browser pass on the
-      deployed URL.
+- [ ] **ADR-0005 invite-only cutover — in this order:** create the owner account
+      *while public sign-up still works* → apply `0010` → apply `0011` → insert the
+      `platform` row (`0011`'s assertion aborts otherwise) → disable sign-up in
+      GoTrue → land the client lockdown PR (`/signup` demo-only, a membership-less
+      "awaiting assignment" screen, owner-only Members/Roles panels). Both
+      migrations were dry-run end-to-end against this project inside a rolled-back
+      transaction; evidence in `docs/risk-register.md`.
 
 Two corrections to the procedure as written, learned by running it:
 
-- `supabase db dump` is not usable here — it shells out to a local `pg_dump`,
-  which is not installed. Take the restore point from the Dashboard, or install
-  the Postgres client tools, and treat §0's "dump exists" as unmet.
-- `supabase db query --linked` is the practical way to run §6's probes without a
-  psql client. It connects through the Management API using the login token, so
-  no database password is needed. `supabase/db/check-*.sql` are the scripts that
-  ran; they are gitignored scratch files, so re-create them from this section.
+- `supabase db query --remote` is the practical way to run §6's probes without a
+  psql client. It connects through the Management API using the login token, so no
+  database password is needed. `supabase/db/check-*.sql` are the scripts that ran;
+  they are gitignored scratch files, so re-create them from this section.
+- Since v2.122 the CLI asks for confirmation before executing SQL remotely: pass
+  `--read-only` for selects and `--yes` when you mean to write. `--linked` still
+  works but prints a deprecation warning; use `--remote`.
 
 
 Everything here runs against a **Supabase project**, not the browser. Nothing in
@@ -154,6 +174,47 @@ update public.organizations set require_step_up_for_orders = false where slug='w
 ```
 
 Using it re-opens R-19; record that in `docs/risk-register.md`.
+
+## 5b. Close the seeded demo credentials — mandatory once the URL is production
+
+`0003_seed.sql` puts five staff accounts on the project sharing a password that is
+printed in this repo. While the deployment served the demo build that was inert;
+as soon as `vercel.json` builds production mode it is a working credential on a
+public clinical URL. Confirm the exposure before acting:
+
+```sql
+select p.email, left(u.encrypted_password, 12)
+  from public.profiles p join auth.users u on u.id = p.id
+ order by p.email;
+-- every seeded row shows the same prefix as the hash committed in 0003_seed.sql
+```
+
+Then revoke the clinical staff and neutralise the admin without deleting history:
+
+```sql
+update public.profiles set disabled_at = now()
+ where email in ('doctor@www.clinic','nurse@www.clinic','lab@www.clinic','reception@www.clinic')
+   and disabled_at is null;
+
+-- generated inside the statement: nobody keeps the new password
+update auth.users
+   set encrypted_password = extensions.crypt(
+         encode(extensions.gen_random_bytes(24), 'hex'), extensions.gen_salt('bf', 10)),
+       updated_at = now()
+ where id = (select id from public.profiles where email = 'admin@www.clinic');
+```
+
+`extensions.` qualification is not decoration — the same pgcrypto-in-`extensions`
+layout that caused R-20 bites anything that calls `crypt`/`gen_salt`/`digest`
+unqualified.
+
+Verify by impersonation, the same way as §6: the revoked account must give
+`current_org_id() IS NULL` and 0 patients, and a live account must still read its
+rows. Write `access_changed` rows into `auth_events` and `audit_log` so the
+revocation is evidence, not folklore.
+
+To use the break-glass admin again, set a new password in Dashboard →
+Authentication → Users; there is deliberately no known value.
 
 ## 6. Gate checks — these four decide whether the apply passed
 

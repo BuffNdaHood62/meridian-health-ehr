@@ -4,10 +4,11 @@ Postgres schema, RLS and identity hardening for the EHR SPA. No backend was in
 the repo before; this is the storage swap the demo `useAuth`/`appendAudit` were
 written to accept. **0001–0009 are applied to project `zdtaludwhxnjutosrnvi`**
 (0001–0006 earlier; 0007, 0008 and the 0009 crypto fix on 2026-10-26, with the
-gate checks in `GO-LIVE-RUNBOOK.md` passing). `0010` — multi-organisation
-memberships, role instances and the permission matrix (ADR-0004) — is authored
-and verified in a rolled-back transaction but **not applied**. For any other
-project, start from `supabase migration list` — do not assume.
+gate checks in `GO-LIVE-RUNBOOK.md` passing). `0010` and `0011` — multi-org
+memberships with role instances (ADR-0004) and single-owner invite-only
+provisioning (ADR-0005) — are authored and were each verified end-to-end inside a
+rolled-back transaction, but **not applied**. For any other project, start from
+`supabase migration list` — do not assume.
 
 ## What's here
 
@@ -32,6 +33,11 @@ project, start from `supabase migration list` — do not assume.
   with an owner and shareable code, role instances, `role_permissions`,
   memberships, and the invitation/join-request lifecycle (ADR-0004). **Authored,
   not applied.**
+- `migrations/0011_platform_owner_invite_only.sql` — single `platform` owner row,
+  `is_platform_owner()`/break-glass, `profiles.org_id` nullable so
+  `handle_new_user()` stops granting tenancy, `create_organization()` dropped,
+  owner-only admin grants and step-up-gated ownership transfer (ADR-0005).
+  **Authored, not applied**; requires `0010`.
 - `config.toml` — local Supabase CLI config (email confirmations on, OTP on).
 - `../scripts/bootstrap-supabase.mjs` — bootstrap (local or `--cloud`).
 
@@ -182,6 +188,11 @@ Still open — none of these can pass until the app runs against a backend:
 - Seed password hash is a real bcrypt hash of the documented demo credential
   `DemoPassw0rd!` (safe to commit for a demo — but never reuse these accounts
   for real data, and rotate/disable them before any non-demo deployment).
+  **Done on `zdtaludwhxnjutosrnvi` on 2026-11-03**, after the deploy switched to
+  production mode: four staff accounts have `disabled_at` set and
+  `admin@www.clinic`'s password was replaced with an in-database random hash that
+  nobody holds. Any project that applies `0003_seed.sql` and serves real users
+  must repeat this — see `docs/risk-register.md`, "Seeded demo credentials closed".
 - Client `audit_log` writes MUST go through the RPC, not `.insert()` — RLS blocks
   direct inserts by design.
 - Never re-add an UPDATE policy on `profiles`. Role, verification and org moves
