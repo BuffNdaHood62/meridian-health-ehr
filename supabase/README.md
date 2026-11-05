@@ -2,12 +2,13 @@
 
 Postgres schema, RLS and identity hardening for the EHR SPA. No backend was in
 the repo before; this is the storage swap the demo `useAuth`/`appendAudit` were
-written to accept. **0001–0009 are applied to project `zdtaludwhxnjutosrnvi`**
-(0001–0006 earlier; 0007, 0008 and the 0009 crypto fix on 2026-10-26, with the
-gate checks in `GO-LIVE-RUNBOOK.md` passing). `0010` and `0011` — multi-org
-memberships with role instances (ADR-0004) and single-owner invite-only
-provisioning (ADR-0005) — are authored and were each verified end-to-end inside a
-rolled-back transaction, but **not applied**. For any other project, start from
+written to accept. **0001–0010 are applied to project `zdtaludwhxnjutosrnvi`**
+(0001–0006 earlier; 0007, 0008 and the 0009 crypto fix on 2026-10-26; `0010`
+memberships + role instances + `role_permissions` on 2026-11-05, after being
+verified end-to-end in a rolled-back transaction). `0011` — two-owner
+invite-only provisioning (ADR-0005) — is authored and **not applied**: it aborts
+until the owner set is bootstrapped, and `wellnesswithwritingale@gmail.com` does
+not exist yet. For any other project, start from
 `supabase migration list` — do not assume.
 
 ## What's here
@@ -31,13 +32,17 @@ rolled-back transaction, but **not applied**. For any other project, start from
   `search_path = public, extensions` or every audit write failed (R-20).
 - `migrations/0010_org_memberships_roles.sql` — base accounts, organisations
   with an owner and shareable code, role instances, `role_permissions`,
-  memberships, and the invitation/join-request lifecycle (ADR-0004). **Authored,
-  not applied.**
-- `migrations/0011_platform_owner_invite_only.sql` — single `platform` owner row,
+  memberships, and the invitation/join-request lifecycle (ADR-0004). **Applied
+  2026-11-05**; `create_organization()` from this file is dropped again by `0011`.
+- `migrations/0011_platform_owners_invite_only.sql` — `platform_owners` set (two owners),
   `is_platform_owner()`/break-glass, `profiles.org_id` nullable so
   `handle_new_user()` stops granting tenancy, `create_organization()` dropped,
-  owner-only admin grants and step-up-gated ownership transfer (ADR-0005).
-  **Authored, not applied**; requires `0010`.
+  guard triggers (immutability, last-owner protection, break-glass cannot own),
+  `org_id` nullable, `handle_new_user` grants no tenancy, owner-only admin grants
+  (ADR-0005). **Authored, not applied**; requires `0010` (applied).
+- `functions/invite/index.ts` — owner-only email invite that sends a GoTrue invite
+  link (the invitee sets their own password). The only holder of the service key.
+  **Not deployed and not type-checked** — no Deno runtime here; see `functions/README.md`.
 - `config.toml` — local Supabase CLI config (email confirmations on, OTP on).
 - `../scripts/bootstrap-supabase.mjs` — bootstrap (local or `--cloud`).
 

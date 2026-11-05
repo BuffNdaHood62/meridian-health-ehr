@@ -47,13 +47,31 @@ because it shells out to a local `pg_dump` that isn't installed.
       the actor recorded in `auth_events`/`audit_log` is whoever the claims name, so
       a real approval should come from a real admin session once the app can sign
       in.
-- [ ] **ADR-0005 invite-only cutover — in this order:** create the owner account
-      *while public sign-up still works* → apply `0010` → apply `0011` → insert the
-      `platform` row (`0011`'s assertion aborts otherwise) → disable sign-up in
-      GoTrue → land the client lockdown PR (`/signup` demo-only, a membership-less
-      "awaiting assignment" screen, owner-only Members/Roles panels). Both
-      migrations were dry-run end-to-end against this project inside a rolled-back
-      transaction; evidence in `docs/risk-register.md`.
+- [ ] **ADR-0005 invite-only cutover — partially done.** `0010` is applied (2026-11-05):
+      tenancy requires an active membership, so a self-signup already reads 0 rows.
+      Remaining, strictly in this order:
+      1. Create **both owner accounts** while public sign-up still works —
+         `wellnesswithwritingale@gmail.com` does not exist yet.
+      2. `supabase db push --remote` applies `0011_platform_owners_invite_only.sql`.
+      3. Bootstrap the owner set (the migration aborts otherwise):
+         `select set_config('app.identity_privileged','on',true);`
+         `insert into public.platform_owners (user_id, granted_by) values ('<o1>',null),('<o2>',null);`
+         `select public.set_break_glass_admin('<break-glass uuid>');`
+      4. Deploy `functions/invite` with `INVITE_SERVICE_ROLE_KEY` and
+         `INVITE_REDIRECT_TO`, then invite each owner their role instance.
+      5. Disable public sign-up in GoTrue. **Step 1 must precede this one** — after
+         it, only the Dashboard can create an account.
+      6. Enrol TOTP for both owners (`revoke_platform_owner` and order authoring both
+         require `has_recent_mfa()`).
+      7. Client PR: `/signup` demo-only; complete the `?code=` invite exchange before
+         deciding session state (with HashRouter the query lands on the path, so test
+         it on the deployed origin); call `claim_invitation()` on sign-in when the
+         profile has no membership; owner-only Members/Roles/Invites panel; a "no
+         membership yet" screen.
+      Without the owner bootstrap, `0011` aborts with
+      `PLATFORM_OWNERS_BOOTSTRAP_REQUIRED` — that is the guard, not a failure. Note
+      this CLI needs `--remote` on `db push`/`migration list`, and `db query` needs
+      `--read-only` or `--yes`.
 
 Two corrections to the procedure as written, learned by running it:
 

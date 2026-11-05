@@ -4,6 +4,140 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+
+## 2026-11-05 — Invitees set their own password; the Edge Function stops being optional
+
+Requirement: owners invite personnel by email and there is no public sign-up. The
+first draft of this assumed a **generated password delivered by email**, which was
+rejected on the merits before anything shipped: an inbox persists and syncs the
+secret, a mailed password proves nothing about who owns the address
+(`email_confirmed_at` would be asserted by us, not earned), the repo already treats
+email as an unsafe channel (R-07), and — decisively — this codebase has **no**
+password management at all: no `updatePassword`, no `resetPasswordForEmail`, no
+change or forgot-password screen anywhere in `src/`. A mailed password would have
+become a permanent credential that nobody could rotate or recover.
+
+So the flow is GoTrue's own invite link: the invitee sets their own password, and the
+click is the proof of mailbox control.
+
+### Added or changed
+- `supabase/functions/invite/index.ts` — the only holder of the service key. It
+  forwards the caller's JWT to `assert_can_invite()` (authority lives in SQL, as
+  everywhere else), then either `admin.inviteUserByEmail` (auto email) or
+  `admin.generateLink` returning a link once for the owner to deliver. Nothing
+  generates, stores or logs a password; the stored `token_hash` is a SHA-256 of
+  GoTrue's token and is NULL for auto-email delivery, where we never see it.
+- `0011_platform_owners_invite_only.sql` — `invitations` gains `user_id`,
+  `full_name`, `delivery`, `sent_at`, `claimed_at`, and `token_hash` becomes
+  nullable; `assert_can_invite()`, `record_invitation()` (service-role only, and it
+  re-validates that the named inviter is still an owner and member) and
+  `claim_invitation()` replace 0010's `invite_member()`, which minted our own bearer
+  token and handed a raw secret to the SPA.
+- `supabase/functions/README.md` — deploy commands and the rules the function relies
+  on.
+
+### Caught by the dry run, fixed before finalising
+- `create_role_instance()` was still gated on `is_admin()`; break-glass holds no
+  `Admin-1` instance, so it could not staff a second nurse in an emergency. Now
+  `platform_can_manage()`, with `admin` slots still owner-only.
+- Claiming an invitation fails `NO_FREE_ROLE_SLOT` unless a slot exists — correct,
+  and the invitation flow must therefore open slots deliberately rather than assume
+  one is free.
+- `deno` is not installed here, so the function is **not type-checked and not
+  deployed**; treat it as reviewed-by-reading. All 17 SQL probes in
+  `docs/risk-register.md` were rolled back and confirmed clean.
+
+R-22 stays **Mitigated**, not closed, until `0011` is applied, the function is
+deployed, and public sign-up is switched off in GoTrue.
+
+
+## 2026-11-05 — Two platform owners, not one; `0011` re-authored and dry-run verified
+
+The requirement changed mid-flight: `wellnesswithwritingale@gmail.com` **and**
+`michaelnnamdi62@gmail.com` are both platform owners, and public sign-up still goes
+away. Ownership therefore cannot be a column — it is a set.
+
+- `supabase/migrations/0011_platform_owner_invite_only.sql` was **deleted before it
+  was ever applied** (two files with the same `0011` version would have collided in
+  the CLI ledger).
+- New: `supabase/migrations/0011_platform_owners_invite_only.sql` — 32 statements,
+  `pglast` clean, **not applied**. `public.platform` keeps only platform-wide
+  settings (`break_glass_user_id`), and `public.platform_owners(user_id pk,
+  granted_by, granted_at)` is the owner set. `is_platform_owner()` is an EXISTS over
+  that set joined to a `verified and disabled_at is null` profile, so a revoked
+  owner loses ownership on the next query like every other `0008`-era gate.
+- Guards added for the multi-owner case, all verified by `begin; … rollback;`
+  against the live project (head → bootstrap → probes → §9 assertion):
+  `PLATFORM_OWNERS_ARE_IMMUTABLE` (no UPDATE), `CANNOT_REMOVE_LAST_OWNER` (delete
+  guard, which also fires on the `auth.users` cascade), `BREAK_GLASS_CANNOT_BE_OWNER`
+  (insert guard + `set_break_glass_admin`), `revoke_platform_owner()` requiring
+  `has_recent_mfa()`, and admin-role grants restricted to owners in both
+  `assign_role()` and `invite_member()`.
+- One semantic correction while writing it: `assign_role()` had to move from
+  `is_admin()` to `platform_can_manage()`, because break-glass is expected to be able
+  to reassign clinical roles in an emergency without necessarily holding the org's
+  `Admin-1` instance. A dangling `if not found` from that edit was caught before the
+  dry run, not after.
+- Dry-run evidence: owner `is_platform_owner()` true and still reading 2 patients;
+  owner granted `Admin-1` fine; break-glass `platform_can_manage()` true, invited a
+  nurse with a 64-char token, blocked from both admin invite and admin slot;
+  `create_organization()` gone; `revoke_platform_owner()` at `aal1` →
+  `STEP_UP_REQUIRED`. Post-rollback confirmed clean (no new tables, `org_id` back to
+  `not null`, `create_organization()` present, nurse's revocation restored,
+  memberships still 6).
+- ADR-0005 amended (decisions 1, 2, 5 and the ordering); `AGENTS.md`,
+  `supabase/README.md` and `docs/risk-register.md` now describe two owners.
+
+**Blocker to applying `0011`:** `wellnesswithwritingale@gmail.com` does not exist —
+the project has 6 accounts (5 seeded staff + yours). It must be created **while
+public sign-up still works**, then the owner set bootstrapped, then sign-up disabled.
+`0011` §9 aborts the migration if the owner set is empty, so the sequence is
+enforced by the database rather than by discipline.
+
+---
+
+## 2026-11-05 — `0010` is live; `0011` refused to apply, which is the guard working
+
+`supabase db push --remote` moved the project to 0001–**0010** applied. Tenancy and
+authorisation no longer read `profiles.org_id`/`profiles.role` — they resolve
+through `org_memberships`, `org_role_instances` and `role_assignments`, and the
+permission matrix is 31 data rows in `role_permissions` seeded verbatim from the
+old `role_allows()` CASE (wildcards included, so R-21 is preserved rather than
+silently changed). `profiles.org_id`/`role` survive as a cache written by
+`sync_legacy_profile()`.
+
+Backfill on the real data: 6 memberships, 6 slots (`Admin-1, Doctor-1, Doctor-2,
+Lab-1, Nurse-1, Reception-1`), 6 live assignments, **0** accounts left without a
+membership, and the migration's own assertion block passed — otherwise it would
+have aborted like `0011` did.
+
+Access was re-probed after the swap rather than assumed: your account still resolves
+the org and reads its 2 patients with `role_allows('orders','insert')` true; the
+revoked seeded doctor gets `current_org_id()` NULL, `is_admin()` false and 0
+patients. The deployed login page renders unchanged.
+
+**`0011` aborted, on purpose:**
+`PLATFORM_BOOTSTRAP_REQUIRED: expected exactly 1 platform row, found 0. Run the
+insert from this file's header step 3, then re-apply.` Because `db push` runs each
+migration in its own transaction, nothing partial landed — no `platform` table,
+`create_organization()` still defined, `profiles.org_id` still `not null`. The
+proprietor's account does not exist yet, so the owner row cannot be bootstrapped.
+
+Practical consequence already in force: a self-signup now creates a profile with no
+membership, so it reads 0 rows — R-22 moves from Open to **Mitigated**. What is
+still open is that sign-up itself is enabled at GoTrue, `handle_new_user()` still
+stamps `org_id`, and none of ADR-0005's owner-only grants are in the database.
+
+Two CLI behaviours worth knowing, both discovered here: this version defaults
+`db push` and `migration list` to the **local** stack unless `--remote` is passed
+(the first attempt today connected to `127.0.0.1:54322` and changed nothing), and
+`db query` demands `--read-only` or `--yes`. That flag matters: running a migration
+file through `db query` executes statement-by-statement without a wrapping
+transaction, which would half-apply `0011` — stop before the assertion and leave the
+nullable column and rewritten trigger in place.
+
+---
+
 ## 2026-11-03 — ADR-0005: one platform owner, invitation-only provisioning (`0011` drafted)
 
 Decisions taken: the owner is a **new dedicated account** (not a handover of

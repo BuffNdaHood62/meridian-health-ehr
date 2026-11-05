@@ -1,7 +1,7 @@
 # ADR-0004 — Multi-organisation accounts with role instances
 
 Date: 2026-10-26
-Status: Proposed — `0010_org_memberships_roles.sql` authored; run end-to-end against the live project inside a rolled-back transaction (see Evidence), not applied
+Status: Accepted — `0010_org_memberships_roles.sql` **applied to the live project 2026-11-05**, after the rolled-back dry run recorded in Evidence
 Relates to: `docs/risk-register.md` R-04, R-05, R-14, R-20, R-21, R-22; `supabase/migrations/0007_www_registry_and_access_hardening.sql`, `0008_identity_hardening.sql`, `0010_org_memberships_roles.sql`; `src/identity/*`; ADR-0005 (single owner + invite-only provisioning, which narrows decision 1 and drops `create_organization`)
 
 ## Context

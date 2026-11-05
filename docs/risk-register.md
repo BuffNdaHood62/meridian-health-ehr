@@ -43,8 +43,8 @@ notification) on the NDPA track.
 | R-18 | `verified`/revocation were not enforced by RLS: `current_org_id()` and `is_admin()` ignored them, so an unapproved or revoked profile kept reading PHI until JWT expiry | `supabase/migrations/0001_init.sql:175`, `evaluate()` in `src/identity/supabase-adapter.ts` | `0008` folds `verified and disabled_at is null` into every helper; `set_profile_access(..., false)` takes effect on the next query (no `auth.sessions` surgery); the adapter signs out a disabled/unverified profile and distinguishes revoked from pending in the message | **Closed** — applied 2026-10-26; probes as `authenticated`: unverified → `count(*) from patients` = **0**, `current_org_id()` = NULL; same account with `disabled_at` set → **0**, while a verified doctor still sees its org's 2 rows |
 | R-19 | Step-up was demo-only: `RouteAuthenticationGate` returned `<Outlet/>` whenever Supabase was configured, so backend mode had no recent-auth check on `/orders` | `RouteAuthenticationGate` in `src/auth.tsx`, `stepUpReason()` in `src/identity/supabase-adapter.ts` | The gate now calls `stepUpReason()` in every mode and routes to `/login/step-up`; `0008` requires GoTrue AAL2 + recent TOTP `amr` for order authoring/administration; org switch defaults on and downgrades require step-up + audit | **Closed** — applied 2026-10-26; order insert at `aal1` → `42501 new row violates row-level security policy`, same insert with `aal2` + a fresh `totp` `amr` entry → succeeds |
 | R-20 | Every `audit_log` write fails on the hosted project, so `append_audit()` — and with it `approve_profile`, `set_profile_access`, `set_profile_role`, `update_my_profile`, invitation creation/redemption and the audited app actions — error out | `chain_audit_hash()` in `0007`, `create_invitation`/`accept_invitation` in `0008`; Supabase installs pgcrypto in the `extensions` schema while these pin `set search_path = public` | Found 2026-10-26 by dry-running `approve_profile` (`42883 function digest(text, unknown) does not exist`). `0009_crypto_search_path_fix.sql` widens those three functions to `public, extensions` without touching their bodies; the longer-term shape is the built-in `sha256()` on PG 17 and no pgcrypto at all | **Closed** — `0009` applied 2026-10-26; `approve_profile` then wrote its audit row on the hosted project (`action=approve`, `actor=admin`, `row_hash` computed). Longer-term shape is still the built-in `sha256()` with no pgcrypto dependency |
-| R-21 | Role wildcards grant **read access to every entity** to every role: `role_allows()` returns true for `select` regardless of entity, so `lab` and `reception` can read `notes` (and `history`, `medications`, …). The "lab cannot read notes" expectation in the `0007` assertion comments is not what the code does | `role_allows()` CASE in `0008:197`, consumed by `notes_read`/`history_read`/`medications_read` in `0007:480-486` | `role_permissions` in `0010` makes the matrix one row per `(role, entity, action)`, so tightening is a data change, not a helper rewrite. Preserved verbatim in `0010` because narrowing clinical read access is a clinical decision | **Open** — documented, behaviour unchanged; needs sign-off on which roles may read notes/history/medications |
-| R-22 | Open self-registration auto-grants **tenancy**: anyone can call `/signup`, and the trigger attaches the new profile to the first organisation because `profiles.org_id` is `not null`. Verification gates the *role*, not the *org*, so an unapproved stranger is already inside a clinic's tenant boundary | `0001:15` (`org_id not null`), `handle_new_user()` at `0001:204-213`, `src/pages/Signup.tsx`, `signup()` in `src/identity/supabase-adapter.ts` | ADR-0005: create accounts only by owner action, disable public sign-up in GoTrue, and let `0011` make `org_id` nullable so `handle_new_user` attaches nothing — no membership means `current_org_id()` is NULL and every policy fails closed. `create_organization()` dropped | **Open** — `0011` authored and dry-run verified (rolled back), not applied. Until then the live project still admits self-signups |
+| R-21 | Role wildcards grant **read access to every entity** to every role: `role_allows()` returns true for `select` regardless of entity, so `lab` and `reception` can read `notes` (and `history`, `medications`, …). The "lab cannot read notes" expectation in the `0007` assertion comments is not what the code does | `role_allows()` CASE in `0008:197`, consumed by `notes_read`/`history_read`/`medications_read` in `0007:480-486` | `role_permissions` in `0010` makes the matrix one row per `(role, entity, action)`, so tightening is a data change, not a helper rewrite. Preserved verbatim in `0010` because narrowing clinical read access is a clinical decision | **Open** — `0010` applied 2026-11-05, so the matrix is now data: narrowing it is 15-ish `delete from role_permissions` rows, not a helper rewrite. Still needs the clinical decision |
+| R-22 | Open self-registration auto-grants **tenancy**: anyone can call `/signup`, and the trigger attaches the new profile to the first organisation because `profiles.org_id` is `not null`. Verification gates the *role*, not the *org*, so an unapproved stranger is already inside a clinic's tenant boundary | `0001:15` (`org_id not null`), `handle_new_user()` at `0001:204-213`, `src/pages/Signup.tsx`, `signup()` in `src/identity/supabase-adapter.ts` | ADR-0005: create accounts only by owner action, disable public sign-up in GoTrue, and let `0011` make `org_id` nullable so `handle_new_user` attaches nothing — no membership means `current_org_id()` is NULL and every policy fails closed. `create_organization()` dropped | **Mitigated (2026-11-05)** — `0010` applied: tenancy now requires an active `org_memberships` row, so a self-signup gets a profile with no membership and reads 0 rows. Not closed: sign-up is still open at GoTrue, `handle_new_user()` still stamps `org_id`, and `0011` (nullable `org_id`, no tenancy at creation, owner-only grants) is unapplied |
 
 ## What the app still must not do
 
@@ -220,7 +220,7 @@ until its password is reset.
 
 ADR-0005 (decisions: new dedicated owner account, single organisation, Edge
 Function deferred, break-glass admin retained) and
-`supabase/migrations/0011_platform_owner_invite_only.sql` are authored. Neither is
+`supabase/migrations/0011_platform_owners_invite_only.sql` (re-authored, see below) are the intended end state. Neither
 applied. `0010` is still unapplied too, so `0011` was exercised as a chain:
 `begin; 0010; 0011; …; rollback;`.
 
@@ -252,3 +252,106 @@ public sign-up still works**, bootstrapping the `platform` row, disabling sign-u
 in GoTrue, and the client-side lockdown (`/signup` demo-only, `signup()` returning
 the invitation-only error, an "awaiting assignment" screen for membership-less
 accounts).
+
+## 0010 applied, 0011 aborted on purpose (2026-11-05)
+
+`supabase db push --remote` applied `0010_org_memberships_roles.sql` and refused
+`0011_platform_owner_invite_only.sql`.
+
+- **Ledger:** `migration list --remote` shows 0001–0010 remote, `0011` local only.
+- **What landed:** `org_memberships` 6 rows, `org_role_instances` 6
+  (`Admin-1, Doctor-1, Doctor-2, Lab-1, Nurse-1, Reception-1`), live assignments 6,
+  `role_permissions` 31 rows seeded verbatim from the old `role_allows()` CASE.
+  Accounts with no membership: 0 — the backfill assertion held.
+- **Access unchanged after the helper swap**, probed as `authenticated` with
+  injected claims: your account → org resolves, 2 patients,
+  `role_allows('orders','insert')` true; the revoked seeded doctor → `current_org_id()`
+  NULL, `is_admin()` false, **0 patients**. The deployed login page renders as before.
+- **`0011` abort reason, verbatim:**
+  `PLATFORM_BOOTSTRAP_REQUIRED: expected exactly 1 platform row, found 0. Run the
+  insert from this file's header step 3, then re-apply. (SQLSTATE P0001)`
+  It ran inside `db push`'s per-migration transaction, so nothing partial landed:
+  no `platform` table, `create_organization()` still present, `profiles.org_id`
+  still `not null`.
+- **Two CLI notes:** this CLI version defaults `db push`/`migration list` to the
+  *local* stack and needs `--remote`; and `db query` now requires `--read-only` for
+  selects or `--yes` for writes, which protects against exactly the half-applied
+  migration that running a migration file raw would cause.
+
+What is still required before `0011` can apply: create the proprietor's account
+while public sign-up still works, then `insert into platform (id, owner_user_id)
+values (1, '<uuid>')`, then `db push --remote`. Until then the invitation-only
+model is documented, not in force.
+
+## 0011 re-authored for two owners, then dry-run verified (2026-11-05)
+
+Requirement change: the platform has **two** owners — `wellnesswithwritingale@gmail.com`
+and `michaelnnamdi62@gmail.com` — with public sign-up still going away. So ownership
+is a set (`public.platform_owners`), not a column, and the superseded single-owner
+draft (`0011_platform_owner_invite_only.sql`) was deleted before it was ever applied.
+
+New guards beyond the single-owner version, each verified by `begin; … rollback;`
+against the live project (head + bootstrap + probes + §9 assertion):
+
+| Guard | Probe result |
+| --- | --- |
+| owner set is a set | `is_platform_owner()` true for an owner; owner still reads 2 patients |
+| no ownerless platform | deleting the last owner → `CANNOT_REMOVE_LAST_OWNER` |
+| owner rows are append/delete-only | `update platform_owners set granted_at…` → `PLATFORM_OWNERS_ARE_IMMUTABLE` |
+| owner removal needs a fresh second factor | `revoke_platform_owner()` at `aal1` → `STEP_UP_REQUIRED` |
+| only owners grant the admin role | owner `assign_role(user, Admin-1)` ok; break-glass same call → `ADMIN_GRANT_OWNER_ONLY`; break-glass `invite_member(email,'admin')` → `ADMIN_GRANT_OWNER_ONLY` |
+| break-glass can still run the clinic | `platform_can_manage()` true, `invite_member(email,'nurse')` ok (64-char token), `is_admin()` false |
+| break-glass and ownership cannot merge | assertion + insert guard reject it |
+| single-org platform | `create_organization(...)` → function does not exist |
+
+Post-rollback state confirmed clean: no `platform`/`platform_owners` tables,
+`profiles.org_id` back to `not null`, `create_organization()` present, nurse's
+`disabled_at` restored, memberships still 6.
+
+Blocker for applying it: **`wellnesswithwritingale@gmail.com` does not exist yet**
+(only 6 accounts: 5 seeded + Michael). It must be created *before* public sign-up is
+disabled, and `0011` §9 aborts if the owner set was never bootstrapped — so the
+order is fixed, not optional.
+
+## Invite-link model verified (2026-11-05)
+
+Decision change: invitees must not receive a mailed password — GoTrue's native
+**invite link** is used and they set their own. That un-deferred the Edge Function,
+because creating an account with a password needs a service key and the app has none.
+
+`0011` was re-authored around `assert_can_invite()` / `record_invitation()` /
+`claim_invitation()` and dry-run end to end (rolled back; confirmed after: 6 accounts,
+no `platform` tables, `invitations.user_id` absent, `invite_member()` and
+`create_organization()` still present, `org_id` back to `not null`). A fake invitee was
+created inside the transaction to exercise the full path:
+
+| Probe | Result |
+| --- | --- |
+| `handle_new_user()` after an invite click | profile with `org_id=NULL verified=false` — no tenancy granted |
+| owner `assert_can_invite('nurse')` | ok |
+| owner `assert_can_invite('admin')` | `ADMIN_GRANT_OWNER_ONLY` |
+| owner opens `Nurse-2` / `Admin-2` slot | ok / ok |
+| break-glass opens an `admin` slot | `ADMIN_GRANT_OWNER_ONLY` |
+| break-glass `assert_can_invite` | `FORBIDDEN` (it can manage members, not send invites) |
+| `record_invitation` as a signed-in user | `SERVICE_ROLE_ONLY` |
+| `record_invitation` with a non-owner actor | `INVITER_NOT_AN_OWNER` |
+| `record_invitation` happy path | invitation row created |
+| invitee `claim_invitation()` | `{org_id, role_key: nurse}` → org resolves, roles `nurse`, verified flips, 2 patients visible |
+| `claim_invitation()` twice | `NO_PENDING_INVITATION` |
+| `claim_invitation()` for an unrelated email | `NO_PENDING_INVITATION` |
+| `create_organization()` | function does not exist |
+| owner removal at `aal1` | `STEP_UP_REQUIRED` |
+| owner row UPDATE | `PLATFORM_OWNERS_ARE_IMMUTABLE` |
+| break-glass added as owner | `BREAK_GLASS_CANNOT_BE_OWNER` |
+| deleting the last owner | `CANNOT_REMOVE_LAST_OWNER` |
+
+Two defects the dry run caught, both fixed in the migration before it was finalised:
+`create_role_instance()` still gated on `is_admin()`, which would have left break-glass
+unable to staff a second nurse — now `platform_can_manage()`, with `admin` slots kept
+owner-only; and the slot must be opened before a claim succeeds, otherwise
+`claim_invitation()` fails `NO_FREE_ROLE_SLOT` (correct behaviour, easy to misread as a
+bug — so the invitation flow must create slots deliberately).
+
+`supabase/functions/invite/index.ts` is **authored but not deployed and not
+type-checked** — there is no Deno runtime here. R-22 stays Mitigated, not closed, until
+`0011` is applied, the function is deployed, and public sign-up is switched off.
