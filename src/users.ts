@@ -88,6 +88,42 @@ export interface SignupResult {
 // RFC-5322-lite: non-empty local@domain.tld
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * The client-side policy shared by signup and password change. Deliberately
+ * minimal: GoTrue owns the real rules, and a second opinion in the UI must never
+ * be looser than the server.
+ */
+export function passwordProblem(password: string): string {
+  if (password.length < 10) return "Password must be at least 10 characters.";
+  // ponytail: basic weakness gate (no dependency). Server adds breached-password
+  // check + Argon2id + full policy.
+  const weak = /^(?:password|1234567890|qwerty|abcdefghij)$/i.test(password);
+  return weak ? "Choose a less common password." : "";
+}
+
+export async function changeAccountPassword(
+  accountId: string,
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ error: string }> {
+  const account = loadAccounts().find((a) => a.id === accountId);
+  if (!account) {
+    return { error: "Demo staff accounts have no password to change. Use Create account to try the flow." };
+  }
+  if ((await sha256Hex(currentPassword)) !== account.pwHash) {
+    return { error: "Current password is incorrect." };
+  }
+  const problem = passwordProblem(newPassword);
+  if (problem) return { error: problem };
+  if (newPassword === currentPassword) {
+    return { error: "Choose a password you have not used here before." };
+  }
+
+  const pwHash = await sha256Hex(newPassword);
+  saveAccounts(loadAccounts().map((a) => (a.id === accountId ? { ...a, pwHash } : a)));
+  return { error: "" };
+}
+
 export async function signupAccount(input: {
   name: string;
   email: string;
@@ -100,13 +136,8 @@ export async function signupAccount(input: {
 
   if (name.length < 2) return { ok: false, error: "Name is too short." };
   if (!EMAIL_RE.test(email)) return { ok: false, error: "Enter a valid email address." };
-  if (password.length < 10) {
-    return { ok: false, error: "Password must be at least 10 characters." };
-  }
-  // ponytail: basic weakness gate (no dependency). Server adds breached-password
-  // check + Argon2id + full policy.
-  const weak = /^(?:password|1234567890|qwerty|abcdefghij)$/i.test(password);
-  if (weak) return { ok: false, error: "Choose a less common password." };
+  const weakPassword = passwordProblem(password);
+  if (weakPassword) return { ok: false, error: weakPassword };
   if (findAccountByEmail(email)) {
     return { ok: false, error: "An account with this email already exists." };
   }

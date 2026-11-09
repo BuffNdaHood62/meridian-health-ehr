@@ -137,3 +137,40 @@ describe("DemoIdentityAdapter", () => {
     expect(sessionMap.has("www-session-id")).toBe(false);
   });
 });
+
+describe("DemoIdentityAdapter second factor and credentials", () => {
+  it("says plainly that no second factor exists in demo mode", async () => {
+    const status = await adapter.mfaStatus();
+    expect(status.available).toBe(false);
+    expect(status.factors).toEqual([]);
+    expect(status.error).toMatch(/no second factor/i);
+    expect(await adapter.enrollMfa("phone")).toMatchObject({ factorId: "", error: /no second factor/i });
+    expect(await adapter.verifyMfaEnrollment("f1", "123456")).toMatchObject({ error: /no second factor/i });
+  });
+
+  it("refuses a password change with no live session", async () => {
+    expect(await adapter.changePassword("anything", "longenough12")).toMatchObject({
+      error: /session ended/i,
+    });
+  });
+
+  it("changes the local password and rejects a wrong current one", async () => {
+    await adapter.signup({
+      name: "Nadia Femi", email: "nadia@www.clinic", role: "nurse", password: "longenough12",
+    });
+
+    expect(await adapter.changePassword("wrong-password", "brandnewpass1")).toMatchObject({
+      error: /incorrect/i,
+    });
+    expect(await adapter.changePassword("longenough12", "password")).toMatchObject({
+      error: /common password/i,
+    });
+    expect(await adapter.changePassword("longenough12", "longenough12")).toMatchObject({
+      error: /not used here before/i,
+    });
+    expect(await adapter.changePassword("longenough12", "brandnewpass1")).toEqual({ error: "" });
+
+    expect(await adapter.signIn("nadia@www.clinic", "longenough12")).toMatchObject({ kind: "error" });
+    expect(await adapter.signIn("nadia@www.clinic", "brandnewpass1")).toMatchObject({ kind: "active" });
+  });
+});

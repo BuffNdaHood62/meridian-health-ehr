@@ -1,7 +1,15 @@
+import type {
+  ActionError,
+  AdapterOutcome,
+  IdentityAdapter,
+  MfaEnrollment,
+  MfaFactorInfo,
+  MfaStatus,
+  SignupInput,
+} from "./adapter";
 import type { Session } from "@supabase/supabase-js";
 import { requireSupabase } from "../lib/supabase";
 import type { Role, WWWUser } from "../users";
-import type { AdapterOutcome, IdentityAdapter, SignupInput } from "./adapter";
 
 // ============================================================================
 // SupabaseIdentityAdapter — GoTrue credentials + TOTP, projected onto the
@@ -246,6 +254,120 @@ async function signOut(scope: "local" | "global" = "local"): Promise<void> {
   }
 }
 
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+async function mfaStatus(): Promise<MfaStatus> {
+  const fallback: MfaStatus = {
+    available: true, factors: [], aal: "unknown",
+    stepUpWindowMinutes: STEP_UP_MAX_AGE_MS / 60_000, error: "",
+  };
+  let client;
+  try {
+    client = requireSupabase();
+  } catch (err) {
+    return { ...fallback, available: false, error: messageOf(err) };
+  }
+
+  const { data: listed, error } = await client.auth.mfa.listFactors();
+  if (error) return { ...fallback, available: false, error: error.message };
+
+  // supabase-js types listFactors() as returning verified factors only, but GoTrue
+  // also returns the unverified one mid-enrolment. Read the status defensively:
+  // an unverified factor must never be reported as a satisfied second factor.
+  const shape = (f: {
+    id: string;
+    friendly_name?: string | null;
+    status?: string;
+    verified_at?: string | null;
+  }): MfaFactorInfo => ({
+    id: f.id,
+    friendlyName: f.friendly_name?.trim() || "Authenticator app",
+    type: "totp",
+    verified: f.status ? f.status === "verified" : Boolean(f.verified_at),
+  });
+
+  const factors: MfaFactorInfo[] = [
+    ...(listed?.totp ?? []).map((f) => shape(f)),
+    ...(listed?.webauthn ?? []).map((f) => ({
+      ...shape(f),
+      type: "webauthn" as const,
+      friendlyName: f.friendly_name || "Security key",
+    })),
+  ];
+
+  const { data: aal } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  const level = aal?.currentLevel;
+  return {
+    ...fallback,
+    factors,
+    aal: level === "aal2" || level === "aal3" ? "aal2" : level === "aal1" ? "aal1" : "unknown",
+  };
+}
+
+/**
+ * Creates an UNVERIFIED factor. An unverified factor satisfies nothing:
+ * has_recent_mfa() and listFactors().verified both stay false until
+ * verifyMfaEnrollment() succeeds, so an abandoned wizard cannot pretend to have
+ * hardened the account.
+ */
+async function enrollMfa(friendlyName: string): Promise<MfaEnrollment> {
+  const client = requireSupabase();
+  const { data, error } = await client.auth.mfa.enroll({
+    factorType: "totp",
+    friendlyName: friendlyName.trim() || "Authenticator app",
+    issuer: "WWW EMR",
+  });
+  if (error || !data) {
+    return { factorId: "", secret: "", qrDataUri: "", error: error?.message ?? "Could not start enrolment." };
+  }
+  return {
+    factorId: data.id,
+    secret: data.totp?.secret ?? "",
+    qrDataUri: data.totp?.qr_code ?? "",
+    error: "",
+  };
+}
+
+async function verifyMfaEnrollment(factorId: string, code: string): Promise<ActionError> {
+  const client = requireSupabase();
+  const { data: challenge, error } = await client.auth.mfa.challenge({ factorId });
+  if (error || !challenge) return { error: error?.message ?? "Could not request a code." };
+
+  const { error: verifyError } = await client.auth.mfa.verify({
+    factorId,
+    challengeId: challenge.id,
+    code: code.trim(),
+  });
+  if (verifyError) {
+    return { error: "That code was not accepted. Wait for the next code and try again." };
+  }
+  return { error: "" };
+}
+
+/**
+ * Deliberately does not route through stepUp(): that demands an authenticator
+ * code, and this screen is how people get their first one. Instead it proves the
+ * credential by re-authenticating with the current password — which is also what
+ * GoTrue wants before updateUser(). Consequence spelled out in the UI: the session
+ * drops back to AAL1, so a sensitive route will ask for a code again.
+ */
+async function changePassword(currentPassword: string, newPassword: string): Promise<ActionError> {
+  const client = requireSupabase();
+  const { data } = await client.auth.getSession();
+  const email = data.session?.user.email;
+  if (!email) return { error: "This session has no email to re-authenticate. Sign in again." };
+  if (!currentPassword) return { error: "Enter your current password to confirm it is you." };
+
+  const { error: reauth } = await client.auth.signInWithPassword({ email, password: currentPassword });
+  if (reauth) return { error: "Your current password was not accepted." };
+
+  const { error } = await client.auth.updateUser({ password: newPassword });
+  if (error) return { error: error.message };
+  return { error: "" };
+}
+
 export function createSupabaseIdentityAdapter(): IdentityAdapter {
   return {
     mode: "supabase",
@@ -265,5 +387,9 @@ export function createSupabaseIdentityAdapter(): IdentityAdapter {
     signup,
     signOut,
     stepUpReason,
+    mfaStatus,
+    enrollMfa,
+    verifyMfaEnrollment,
+    changePassword,
   };
 }

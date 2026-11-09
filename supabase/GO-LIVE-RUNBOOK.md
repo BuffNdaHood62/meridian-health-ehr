@@ -172,8 +172,11 @@ update public.profiles set role='admin', verified=true
  where id = (select id from auth.users where email='<admin email>');
 ```
 
-Then, as that admin in the browser (signed in at AAL1), enrol a factor — there is
-**no enrolment UI in the app yet**, so this is a one-off in the page console:
+Then enrol a factor for that admin. The supported path is in-app: sign in at AAL1,
+open **Settings → Two-factor authentication → Set up → Start enrolment**, scan the
+QR (or type the setup key), and confirm the 6-digit code. An enrolled-but-unconfirmed
+factor satisfies nothing, so abandoning the wizard leaves the account exactly as
+before. Only fall back to the console if the app itself cannot sign in:
 
 ```js
 const { data, error } = await supabase.auth.mfa.enroll({ issuer: 'WWW EMR' });

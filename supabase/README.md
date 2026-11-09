@@ -131,9 +131,9 @@ enable Email OTP in Studio and call `supabase.auth.signInWithOtp({ email })`.
 TOTP is the second factor. It is enforced server-side by `has_recent_mfa()`
 (AAL2 + a recent `totp`/`webauthn` `amr` entry) on order authoring and medication
 administration. The client has challenge/step-up screens (`/login/mfa`,
-`/login/step-up`) but **no enrolment UI** — factors must be enrolled out-of-band
-(e.g. Studio or a one-off script), and there is no admin approval/invitation UI
-either (ADR-0003).
+`/login/step-up`) **and** TOTP enrolment (Settings → Two-factor, which also changes
+the password). Still missing: an admin approval/invitation UI and the owner-facing
+member management panel, so those remain SQL or Dashboard operations (ADR-0003, ADR-0005).
 
 ## Verification checklist
 

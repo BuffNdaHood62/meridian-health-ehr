@@ -5,6 +5,61 @@ Durable log of meaningful changes and why they were made. Newest first.
 ---
 
 
+## 2026-11-05 — TOTP enrolment and password change move into Settings
+
+ADR-0005 §6a listed this as client work the invite flow needs; it was also the
+blocker on the cloud project, because `require_step_up_for_orders = true` with zero
+enrolled factors means no real session can author an order. It could not be fixed by
+a console snippet and left that way — the next owner would hit the same wall.
+
+### Added to the seam, not to the page
+`IdentityAdapter` gained `mfaStatus`, `enrollMfa`, `verifyMfaEnrollment` and
+`changePassword`, plus `MfaStatus` / `MfaEnrollment` / `ActionError` types.
+`useAuth()` exposes `checkMfa`, `enrollMfa`, `verifyMfaEnrollment`, `changePassword`,
+each converting a thrown error into a message so no screen handles a throw.
+`Settings.tsx` calls no GoTrue API directly.
+
+- **Supabase adapter:** `listFactors` + `getAuthenticatorAssuranceLevel` for status;
+  `mfa.enroll({factorType:'totp'})` returns GoTrue's own QR data URI, so no QR
+  dependency; `challenge` + `verify` commits it. `changePassword` deliberately does
+  **not** route through `stepUp()` — that demands an authenticator code, and this
+  screen is how people get their first one. It proves the credential with
+  `signInWithPassword` on the current password, then `updateUser`, which is also what
+  GoTrue wants before accepting a password change. Consequence, spelled out in the
+  UI: the session drops back to password-only, so a sensitive route asks for a code
+  again.
+- **Demo adapter:** refuses. `mfaStatus().available === false` carries the reason and
+  the panel prints it instead of offering a Start button — enrolling nothing against
+  no server is exactly the fake control ADR-0002 forbids. Password change is real
+  locally (`changeAccountPassword`, which shares `passwordProblem()` with signup so
+  the policy cannot drift).
+- Verified factors are separated from started-but-unconfirmed ones, and the panel
+  says an unconfirmed factor grants nothing.
+
+### Verified in the built demo artifact, not only in tests
+67/67 Vitest (3 new adapter tests), `tsc` clean, ESLint clean, `npm run build:demo`
+green, then served in a browser: signed in through the demo picker, opened Settings,
+the 2FA row now offers **Set up** instead of the old `Not in this build` badge, the
+panel shows the demo refusal verbatim with no enrolment button, and the password
+panel renders all three fields with the "this browser only" hint.
+
+The browser pass caught what unit tests could not: seeded staff identities
+(`PHY-0142`) are not local accounts, so a password change answered "This browser has
+no record of that account." It now answers **"Demo staff accounts have no password to
+change. Use Create account to try the flow."**
+
+### Not claimed by this change
+Nothing is enrolled yet — `auth.mfa_factors` is still empty, because the owner
+accounts do not exist. The Supabase path through this screen has **not** run in a
+browser; no backend-configured build exists here, so only the demo adapter's
+behaviour was observed. Docs asserting "no enrolment UI exists" were corrected in
+`AGENTS.md`, `supabase/README.md`, `supabase/GO-LIVE-RUNBOOK.md` §5, ADR-0005 and
+R-14. Also untouched and still misleading: the Settings header "Save changes" button
+and the display/notification toggles persist nothing — a pre-existing no-op that
+should read "Not in this build" instead.
+
+---
+
 ## 2026-11-05 — Invitees set their own password; the Edge Function stops being optional
 
 Requirement: owners invite personnel by email and there is no public sign-up. The

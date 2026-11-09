@@ -134,6 +134,8 @@ unknown to both of them — it is the escape hatch if both mailboxes are lost.
 - **`claim_invitation()` call** on sign-in when the profile has no membership.
 - **Owner UI**: Settings members/roles/invitations panel that calls the function and
   renders a returned link exactly once.
+  *(Built since: TOTP enrolment and password change in Settings; the four items above
+  are still open.)*
 - A "no membership yet" screen for an account that exists but has not been claimed.
 
 ### 6. Demo mode keeps its self-serve behaviour
@@ -181,6 +183,5 @@ provisioning that Phase 4 has not built.
   never be reachable unauthenticated, and its caller authorization lives in SQL
   (`assert_can_invite()`), not in a hand-written role check inside the function.
 - R-21 stands: `role_allows()` still lets every role `SELECT` every entity.
-- Invitation tokens remain the only emailed secret; there is still no enrolment UI,
-  no admin approval UI, and no service-key tier until the deferred Edge Function
-  lands.
+- Invitation tokens remain the only emailed secret. There is still no admin approval
+  UI, and the service-key tier is unimplemented until `functions/invite` is deployed.

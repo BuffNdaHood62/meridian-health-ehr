@@ -15,7 +15,14 @@ import { canAccess, type WWWUser } from "./users";
 import { isSupabaseConfigured } from "./lib/supabase";
 import { createDemoIdentityAdapter } from "./identity/demo-adapter";
 import { createSupabaseIdentityAdapter } from "./identity/supabase-adapter";
-import type { AdapterOutcome, IdentityAdapter, SignupInput } from "./identity/adapter";
+import type {
+  ActionError,
+  AdapterOutcome,
+  IdentityAdapter,
+  MfaEnrollment,
+  MfaStatus,
+  SignupInput,
+} from "./identity/adapter";
 import {
   ANONYMOUS,
   identityReducer,
@@ -60,6 +67,11 @@ export interface AuthContextValue {
   stepUp: (password: string, code?: string) => Promise<string>;
   /** Resolves to the reason step-up is needed, or null. */
   checkStepUp: () => Promise<string | null>;
+  /** Second-factor state for this account; every failure arrives as a message. */
+  checkMfa: () => Promise<MfaStatus>;
+  enrollMfa: (friendlyName: string) => Promise<MfaEnrollment>;
+  verifyMfaEnrollment: (factorId: string, code: string) => Promise<ActionError>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<ActionError>;
   signup: (input: SignupInput) => Promise<AuthResult>;
   logout: () => void;
 }
@@ -195,6 +207,55 @@ export function AuthProvider({
     }
   }, [adapter]);
 
+  const checkMfa = useCallback(async (): Promise<MfaStatus> => {
+    try {
+      return await adapter.mfaStatus();
+    } catch (err) {
+      return {
+        available: false,
+        factors: [],
+        aal: "unknown",
+        stepUpWindowMinutes: 480,
+        error: err instanceof Error ? err.message : "Could not read your second-factor status.",
+      };
+    }
+  }, [adapter]);
+
+  const enrollMfa = useCallback(async (friendlyName: string): Promise<MfaEnrollment> => {
+    try {
+      return await adapter.enrollMfa(friendlyName);
+    } catch (err) {
+      return {
+        factorId: "",
+        secret: "",
+        qrDataUri: "",
+        error: err instanceof Error ? err.message : "Could not start enrolment.",
+      };
+    }
+  }, [adapter]);
+
+  const verifyMfaEnrollment = useCallback(
+    async (factorId: string, code: string): Promise<ActionError> => {
+      try {
+        return await adapter.verifyMfaEnrollment(factorId, code);
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Could not verify that code." };
+      }
+    },
+    [adapter]
+  );
+
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string): Promise<ActionError> => {
+      try {
+        return await adapter.changePassword(currentPassword, newPassword);
+      } catch (err) {
+        return { error: err instanceof Error ? err.message : "Could not change your password." };
+      }
+    },
+    [adapter]
+  );
+
   const signup = useCallback(
     async (input: SignupInput) => applyOutcome(await adapter.signup(input)),
     [adapter, applyOutcome]
@@ -219,10 +280,17 @@ export function AuthProvider({
       verifyMfa,
       stepUp,
       checkStepUp,
+      checkMfa,
+      enrollMfa,
+      verifyMfaEnrollment,
+      changePassword,
       signup,
       logout,
     }),
-    [ready, adapter.mode, state, login, loginWithEmail, verifyMfa, stepUp, checkStepUp, signup, logout]
+    [
+      ready, adapter.mode, state, login, loginWithEmail, verifyMfa, stepUp, checkStepUp,
+      checkMfa, enrollMfa, verifyMfaEnrollment, changePassword, signup, logout,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

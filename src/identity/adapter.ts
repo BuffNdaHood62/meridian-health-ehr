@@ -24,6 +24,41 @@ export interface SignupInput {
   password: string;
 }
 
+/** Second-factor state, as the Settings screen needs to report it honestly. */
+export interface MfaFactorInfo {
+  id: string;
+  friendlyName: string;
+  type: "totp" | "webauthn" | string;
+  verified: boolean;
+}
+
+export interface MfaStatus {
+  /** False when the mechanism cannot exist here at all (demo mode). */
+  available: boolean;
+  factors: MfaFactorInfo[];
+  /** Current authenticator assurance level, or "unknown" if the check failed. */
+  aal: "aal1" | "aal2" | "unknown";
+  /**
+   * Minutes for which a fresh verification keeps sensitive writes allowed.
+   * The server enforces its own window; this is display copy only.
+   */
+  stepUpWindowMinutes: number;
+  error: string;
+}
+
+export interface MfaEnrollment {
+  factorId: string;
+  /** Base32 secret for people who prefer typing a setup key. */
+  secret: string;
+  /** GoTrue hands back a data: URI — no QR library needed. */
+  qrDataUri: string;
+  error: string;
+}
+
+export interface ActionError {
+  error: string;
+}
+
 export interface IdentityAdapter {
   /** Which mechanism is live. UI copy branches on this, never on env guesses. */
   readonly mode: "demo" | "supabase";
@@ -59,4 +94,18 @@ export interface IdentityAdapter {
 
   /** Non-null when a sensitive action needs step-up; the string is the reason. */
   stepUpReason(): Promise<string | null>;
+
+  mfaStatus(): Promise<MfaStatus>;
+
+  /** Creates an UNVERIFIED factor; `verifyMfaEnrollment` is what commits it. */
+  enrollMfa(friendlyName: string): Promise<MfaEnrollment>;
+
+  verifyMfaEnrollment(factorId: string, code: string): Promise<ActionError>;
+
+  /**
+   * Credentials belong to the IdP, so this can fail for reasons the UI cannot
+   * inspect (GoTrue requires a recent sign-in). Surface the message, do not
+   * paper over it.
+   */
+  changePassword(currentPassword: string, newPassword: string): Promise<ActionError>;
 }

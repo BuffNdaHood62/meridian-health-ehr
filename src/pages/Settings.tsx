@@ -1,19 +1,22 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User, Shield, Bell, Sliders, LogOut, Smartphone, KeyRound, Fingerprint,
-  Moon, Stethoscope, Mail, MessageSquare, Siren, Save,
+  Moon, Stethoscope, Mail, MessageSquare, Siren, Save, QrCode,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
+import { ErrorNote } from "../components/ui/ErrorNote";
 import { currentUser } from "../data/mockData";
 import { useAuth } from "../auth";
 import { cn } from "../utils/cn";
 import { listAudit, type AuditEntry } from "../utils/audit";
 import { formatDateTime } from "../utils/format";
+import { passwordProblem } from "../users";
 import { DEMO_MODE } from "../config";
+import type { MfaEnrollment, MfaStatus } from "../identity/adapter";
 
 // ponytail: live account identity comes from useAuth (the real signed-in user),
 // not the static mockData demo profile. mockData supplies only demo-only meta
@@ -54,7 +57,9 @@ function SettingRow({ icon: Icon, title, desc, children }: { icon: React.Element
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { logout, currentUser: liveUser } = useAuth();
+  const {
+    logout, currentUser: liveUser, mode, checkMfa, enrollMfa, verifyMfaEnrollment, changePassword,
+  } = useAuth();
   const name = liveUser?.name ?? currentUser.name;
   const role = liveUser?.role ?? currentUser.role;
   const id = liveUser?.id ?? currentUser.id;
@@ -69,6 +74,90 @@ export default function Settings() {
   const [emailNotif, setEmailNotif] = useState(true);
   const [msgNotif, setMsgNotif] = useState(true);
   const [criticalPush, setCriticalPush] = useState(true);
+
+  // ---- second factor ------------------------------------------------------
+  const [mfaOpen, setMfaOpen] = useState(false);
+  const [mfa, setMfa] = useState<MfaStatus | null>(null);
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaError, setMfaError] = useState("");
+  const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null);
+  const [setupCode, setSetupCode] = useState("");
+  const [setupDone, setSetupDone] = useState(false);
+
+  useEffect(() => {
+    if (!mfaOpen) return;
+    let alive = true;
+    checkMfa().then((status) => {
+      if (alive) setMfa(status);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [mfaOpen, checkMfa]);
+
+  const startEnrolment = async () => {
+    setMfaBusy(true);
+    setMfaError("");
+    setSetupDone(false);
+    const result = await enrollMfa("Authenticator app");
+    setMfaBusy(false);
+    if (result.error) {
+      setMfaError(result.error);
+      return;
+    }
+    setEnrollment(result);
+  };
+
+  const confirmEnrolment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!enrollment) return;
+    setMfaBusy(true);
+    setMfaError("");
+    const result = await verifyMfaEnrollment(enrollment.factorId, setupCode);
+    setMfaBusy(false);
+    if (result.error) {
+      setMfaError(result.error);
+      return;
+    }
+    setEnrollment(null);
+    setSetupCode("");
+    setSetupDone(true);
+    setMfa(await checkMfa());
+  };
+
+  const verifiedFactors = (mfa?.factors ?? []).filter((f) => f.verified);
+  const pendingFactors = (mfa?.factors ?? []).filter((f) => !f.verified);
+
+  // ---- password -----------------------------------------------------------
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwDone, setPwDone] = useState("");
+
+  const submitPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setPwError("");
+    setPwDone("");
+    const problem = passwordProblem(pw.next);
+    if (problem) {
+      setPwError(problem);
+      return;
+    }
+    if (pw.next !== pw.confirm) {
+      setPwError("The two new passwords do not match.");
+      return;
+    }
+    setPwBusy(true);
+    const result = await changePassword(pw.current, pw.next);
+    setPwBusy(false);
+    if (result.error) {
+      setPwError(result.error);
+      return;
+    }
+    setPw({ current: "", next: "", confirm: "" });
+    setPwDone("Password changed.");
+  };
 
   return (
     <div data-testid="settings-page">
@@ -111,11 +200,161 @@ export default function Settings() {
           <Card>
             <CardHeader title="Security & Privacy" subtitle="Authentication and access controls" icon={<Shield className="h-[18px] w-[18px]" />} />
             <div className="divide-y divide-slate-50 px-5">
-              {/* These three are on the roadmap, not in the build. A toggle that
-                  silently does nothing tells a clinician a control protects them. */}
-              <SettingRow icon={KeyRound} title="Two-factor authentication" desc="Requires a code at every sign-in">
-                <Badge tone="slate" dot>Not in this build</Badge>
+              <SettingRow
+                icon={KeyRound}
+                title="Two-factor authentication"
+                desc={
+                  mode === "demo"
+                    ? "Demo mode has no second factor"
+                    : verifiedFactors.length
+                      ? `${verifiedFactors.length} authenticator${verifiedFactors.length > 1 ? "s" : ""} verified`
+                      : "Adds a code at sign-in for sensitive actions"
+                }
+              >
+                {verifiedFactors.length ? (
+                  <Badge tone="green" dot>On</Badge>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setMfaOpen((v) => !v); setMfaError(""); }}
+                    data-testid="settings-mfa-toggle"
+                    className="min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    {mfaOpen ? "Close" : "Set up"}
+                  </button>
+                )}
               </SettingRow>
+
+              {mfaOpen && !verifiedFactors.length && (
+                <div className="py-4" data-testid="settings-mfa-panel">
+                  {mode === "demo" ? (
+                    <p className="text-sm text-slate-600" data-testid="settings-mfa-demo-note">
+                      {mfa?.error || "Demo mode has no second factor. There is no server to verify one, so TOTP cannot be required or enrolled here."}
+                    </p>
+                  ) : enrollment ? (
+                    <form onSubmit={confirmEnrolment} className="space-y-3">
+                      <p className="text-sm font-medium text-slate-800">Scan this with your authenticator app</p>
+                      {enrollment.qrDataUri ? (
+                        <img
+                          src={enrollment.qrDataUri}
+                          alt="QR code for TOTP enrolment"
+                          className="h-40 w-40 rounded-xl border border-slate-200 bg-white p-2"
+                          data-testid="settings-mfa-qr"
+                        />
+                      ) : (
+                        <p className="text-sm text-slate-600">
+                          No QR image was returned — enter this key manually in your app.
+                        </p>
+                      )}
+                      {enrollment.secret && (
+                        <Field label="Setup key" value={enrollment.secret} testId="settings-mfa-secret" />
+                      )}
+                      {pendingFactors.length > 0 && (
+                        <p className="text-xs text-slate-500">
+                          A factor was started but not confirmed. Confirming this code replaces it;
+                          an unconfirmed factor grants no access.
+                        </p>
+                      )}
+                      {mfaError && <ErrorNote message={mfaError} testId="settings-mfa-error" />}
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div className="min-w-[10rem] flex-1">
+                          <label className="mb-1 block text-xs font-medium text-slate-500">6-digit code</label>
+                          <input
+                            value={setupCode}
+                            onChange={(e) => setSetupCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            placeholder="123456"
+                            data-testid="settings-mfa-code"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm tracking-widest text-slate-800 outline-none focus:border-brand-300 focus:ring-2 focus:ring-brand-100"
+                          />
+                        </div>
+                        <button
+                          type="submit"
+                          disabled={mfaBusy || setupCode.length !== 6}
+                          data-testid="settings-mfa-confirm"
+                          className="min-h-[44px] rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          {mfaBusy ? "Checking…" : "Confirm"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEnrollment(null); setSetupCode(""); setMfaError(""); }}
+                          className="min-h-[44px] rounded-xl px-3 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="space-y-3">
+                      {setupDone && (
+                        <p className="text-sm font-medium text-emerald-700" data-testid="settings-mfa-done">
+                          Two-factor is on for this account.
+                        </p>
+                      )}
+                      {!setupDone && mfaError && <ErrorNote message={mfaError} testId="settings-mfa-error" />}
+                      <p className="text-sm text-slate-600">
+                        GoTrue does not issue recovery codes for TOTP. If you lose your authenticator,
+                        an administrator has to reset your password — treat the enrolment as permanent
+                        on this device.
+                      </p>
+                      {mfa && !mfa.available && mfa.error ? (
+                        <p className="text-sm text-slate-500" data-testid="settings-mfa-error">{mfa.error}</p>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={startEnrolment}
+                          disabled={mfaBusy}
+                          data-testid="settings-mfa-start"
+                          className="flex min-h-[44px] items-center gap-2 rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        >
+                          <QrCode className="h-4 w-4" /> {mfaBusy ? "Starting…" : "Start enrolment"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <SettingRow icon={Shield} title="Change password" desc="Your credentials live in the identity provider, not in this browser">
+                <button
+                  type="button"
+                  onClick={() => { setPwError(""); setPwDone(""); setPwOpen((v) => !v); }}
+                  data-testid="settings-password-toggle"
+                  className="min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {pwOpen ? "Close" : "Change"}
+                </button>
+              </SettingRow>
+
+              {pwOpen && (
+                <form onSubmit={submitPassword} className="space-y-3 py-4" data-testid="settings-password-panel">
+                  {pwError && <ErrorNote message={pwError} testId="settings-password-error" />}
+                  {pwDone && (
+                    <p className="text-sm font-medium text-emerald-700" data-testid="settings-password-done">{pwDone}</p>
+                  )}
+                  <Field label="Current password" type="password" value={pw.current} onChange={(v) => setPw((p) => ({ ...p, current: v }))} testId="settings-password-current" />
+                  <Field label="New password" type="password" value={pw.next} onChange={(v) => setPw((p) => ({ ...p, next: v }))} testId="settings-password-next" />
+                  <Field label="Confirm new password" type="password" value={pw.confirm} onChange={(v) => setPw((p) => ({ ...p, confirm: v }))} testId="settings-password-confirm" />
+                  <p className="text-xs text-slate-500">
+                    {mode === "demo"
+                      ? "Demo mode stores accounts in this browser only, so this changes the local record — it is not a server credential."
+                      : "Changing your password signs the session back in with the password alone, so a sensitive route will ask for your authenticator code again."}
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={pwBusy}
+                    data-testid="settings-password-submit"
+                    className="min-h-[44px] rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                  >
+                    {pwBusy ? "Saving…" : "Save password"}
+                  </button>
+                </form>
+              )}
+
+              {/* On the roadmap, not in the build. A toggle that silently does
+                  nothing tells a clinician a control protects them. */}
               <SettingRow icon={Fingerprint} title="Biometric login" desc="Fingerprint or face recognition on supported devices">
                 <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
@@ -207,13 +446,31 @@ export default function Settings() {
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({
+  label, value, type = "text", onChange, testId,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  /** Omitted means display-only: the profile fields are not editable here. */
+  onChange?: (next: string) => void;
+  testId?: string;
+}) {
+  const editable = Boolean(onChange);
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>
       <input
-        defaultValue={value}
-        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+        type={type}
+        value={editable ? value : undefined}
+        defaultValue={editable ? undefined : value}
+        readOnly={!editable}
+        data-testid={testId}
+        {...(onChange ? { onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value) } : {})}
+        className={cn(
+          "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100",
+          editable ? "bg-white" : "bg-slate-50"
+        )}
       />
     </div>
   );

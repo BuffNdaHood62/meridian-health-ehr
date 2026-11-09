@@ -1,13 +1,21 @@
 import {
   USERS,
   accountToUser,
+  changeAccountPassword,
   markAccountVerified,
   signupAccount,
   verifyCredentials,
   type WWWUser,
 } from "../users";
 import { appendAudit } from "../utils/audit";
-import type { AdapterOutcome, IdentityAdapter, SignupInput } from "./adapter";
+import type {
+  ActionError,
+  AdapterOutcome,
+  IdentityAdapter,
+  MfaEnrollment,
+  MfaStatus,
+  SignupInput,
+} from "./adapter";
 
 // ============================================================================
 // DemoIdentityAdapter — localStorage stand-in for GoTrue.
@@ -222,6 +230,43 @@ async function signOut(_scope?: "local" | "global"): Promise<void> {
   }
 }
 
+/**
+ * Demo mode has no IdP, so it has no second factor and no credential to change
+ * server-side. Saying so is the point: a Settings screen that looked like it had
+ * enrolled TOTP would tell a clinician a control protects them when nothing does.
+ */
+const DEMO_MFA_UNAVAILABLE =
+  "Demo mode has no second factor. There is no server to verify one, so TOTP cannot be required or enrolled here.";
+
+async function mfaStatus(): Promise<MfaStatus> {
+  return {
+    available: false,
+    factors: [],
+    aal: "aal1",
+    stepUpWindowMinutes: STEP_UP_MAX_AGE_MS / 60_000,
+    error: DEMO_MFA_UNAVAILABLE,
+  };
+}
+
+async function enrollMfa(): Promise<MfaEnrollment> {
+  return { factorId: "", secret: "", qrDataUri: "", error: DEMO_MFA_UNAVAILABLE };
+}
+
+async function verifyMfaEnrollment(): Promise<ActionError> {
+  return { error: DEMO_MFA_UNAVAILABLE };
+}
+
+async function changePassword(currentPassword: string, newPassword: string): Promise<ActionError> {
+  const rec = currentSession();
+  if (!rec) return { error: "Your demo session ended. Sign in again." };
+  const result = await changeAccountPassword(rec.user.id, currentPassword, newPassword);
+  if (!result.error) {
+    appendAudit("update", "Account", rec.user.id,
+      "password changed in this browser only — not a server credential");
+  }
+  return result;
+}
+
 export function createDemoIdentityAdapter(): IdentityAdapter {
   return {
     mode: "demo",
@@ -233,5 +278,9 @@ export function createDemoIdentityAdapter(): IdentityAdapter {
     signup,
     signOut,
     stepUpReason,
+    mfaStatus,
+    enrollMfa,
+    verifyMfaEnrollment,
+    changePassword,
   };
 }
