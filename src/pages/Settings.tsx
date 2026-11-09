@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   User, Shield, Bell, Sliders, LogOut, Smartphone, KeyRound, Fingerprint,
-  Moon, Stethoscope, Mail, MessageSquare, Siren, Save, QrCode,
+  Moon, Stethoscope, Mail, MessageSquare, Siren, QrCode,
 } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Card, CardHeader } from "../components/ui/Card";
@@ -15,28 +15,13 @@ import { cn } from "../utils/cn";
 import { listAudit, type AuditEntry } from "../utils/audit";
 import { formatDateTime } from "../utils/format";
 import { passwordProblem } from "../users";
+import { CHART_TAB_NAMES, getDefaultChartTab, saveDefaultChartTab } from "../utils/preferences";
 import { DEMO_MODE } from "../config";
 import type { MfaEnrollment, MfaStatus } from "../identity/adapter";
 
 // ponytail: live account identity comes from useAuth (the real signed-in user),
 // not the static mockData demo profile. mockData supplies only demo-only meta
 // (npi/credentials/department/email) until the backend provisions them.
-
-function Toggle({ on, onChange }: { on: boolean; onChange: () => void }) {
-  return (
-    <button
-      onClick={onChange}
-      role="switch"
-      aria-checked={on}
-      className={cn(
-        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-        on ? "bg-brand-600" : "bg-slate-300"
-      )}
-    >
-      <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform", on ? "translate-x-6" : "translate-x-1")} />
-    </button>
-  );
-}
 
 function SettingRow({ icon: Icon, title, desc, children }: { icon: React.ElementType; title: string; desc: string; children: React.ReactNode }) {
   return (
@@ -70,10 +55,20 @@ export default function Settings() {
     const oldest = log.length ? formatDateTime(log[log.length - 1].at) : "";
     return { total: log.length, reads: at("read"), signs: at("sign"), exports: at("export"), oldest };
   }, []);
-  const [darkChart, setDarkChart] = useState(false);
-  const [emailNotif, setEmailNotif] = useState(true);
-  const [msgNotif, setMsgNotif] = useState(true);
-  const [criticalPush, setCriticalPush] = useState(true);
+  const [chartTab, setChartTab] = useState<string>(() => {
+    const stored = getDefaultChartTab();
+    return stored && (CHART_TAB_NAMES as readonly string[]).includes(stored) ? stored : "Overview";
+  });
+  const [chartTabNote, setChartTabNote] = useState("");
+
+  const pickChartTab = (next: string) => {
+    setChartTab(next);
+    setChartTabNote(
+      saveDefaultChartTab(next)
+        ? `Saved on this device — client charts now open on ${next}.`
+        : "This browser refused to store the preference, so it is gone when the page reloads."
+    );
+  };
 
   // ---- second factor ------------------------------------------------------
   const [mfaOpen, setMfaOpen] = useState(false);
@@ -163,12 +158,7 @@ export default function Settings() {
     <div data-testid="settings-page">
       <PageHeader
         title="Settings"
-        subtitle="Manage your profile, security, and clinical preferences."
-        actions={
-          <button className="inline-flex items-center gap-1.5 rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
-            <Save className="h-4 w-4" /> Save changes
-          </button>
-        }
+        subtitle="Manage your profile, security, and clinical preferences. Every control here saves itself — there is nothing left unsaved on this page."
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -182,7 +172,7 @@ export default function Settings() {
                 <div>
                   <p className="text-base font-bold text-slate-900">{name}</p>
                   <p className="text-sm text-slate-500">{role}</p>
-                  <button className="mt-1 text-xs font-semibold text-brand-600 hover:text-brand-700">Change photo</button>
+                  <p className="mt-1 text-xs text-slate-400">Photo upload is not in this build.</p>
                 </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -371,34 +361,49 @@ export default function Settings() {
           <Card>
             <CardHeader title="Clinical Preferences" subtitle="Chart display and workflow defaults" icon={<Sliders className="h-[18px] w-[18px]" />} />
             <div className="divide-y divide-slate-50 px-5">
+              {/* There is no high-contrast stylesheet in this build, so a switch
+                  here would have nothing to turn on. */}
               <SettingRow icon={Moon} title="High-contrast chart mode" desc="Improve readability in low-light environments">
-                <Toggle on={darkChart} onChange={() => setDarkChart((v) => !v)} />
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
-              <SettingRow icon={Stethoscope} title="Default chart tab" desc="Which tab opens first on a patient chart">
-                <select className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-brand-300">
-                  <option>Overview</option>
-                  <option>Vitals</option>
-                  <option>Medications</option>
-                  <option>Labs</option>
+              <SettingRow icon={Stethoscope} title="Default chart tab" desc="Which tab opens first on a client chart">
+                <select
+                  value={chartTab}
+                  onChange={(e) => pickChartTab(e.target.value)}
+                  aria-label="Default chart tab"
+                  data-testid="settings-chart-tab"
+                  className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 outline-none focus:border-brand-300"
+                >
+                  {CHART_TAB_NAMES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
                 </select>
               </SettingRow>
             </div>
+            <p className="px-5 pb-5 text-xs text-slate-500" data-testid="settings-chart-tab-note">
+              {chartTabNote || "Preferences are saved on this device only — they do not follow your account to another browser."}
+            </p>
           </Card>
         </div>
 
         {/* Notifications sidebar */}
         <div className="space-y-6">
           <Card>
-            <CardHeader title="Notifications" subtitle="How you receive alerts" icon={<Bell className="h-[18px] w-[18px]" />} />
+            <CardHeader title="Notifications" subtitle="No alert delivery exists in this build yet" icon={<Bell className="h-[18px] w-[18px]" />} />
             <div className="divide-y divide-slate-50 px-5">
+              {/* Nothing sends an email, push or in-app alert here. A switch that
+                  silently does nothing tells a clinician alerts reached them. */}
               <SettingRow icon={Siren} title="Critical results" desc="Push for critical labs & vitals">
-                <Toggle on={criticalPush} onChange={() => setCriticalPush((v) => !v)} />
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
               <SettingRow icon={MessageSquare} title="Secure messages" desc="In-app + push for new messages">
-                <Toggle on={msgNotif} onChange={() => setMsgNotif((v) => !v)} />
+                <Badge tone="slate" dot>Not in this build</Badge>
               </SettingRow>
               <SettingRow icon={Mail} title="Email digest" desc="Daily summary at 7:00 AM">
-                <Toggle on={emailNotif} onChange={() => setEmailNotif((v) => !v)} />
+                <Badge tone="slate" dot>Not in this build</Badge>
+              </SettingRow>
+              <SettingRow icon={Shield} title="Critical alerts in the top bar" desc="The bell you see after signing in lists critical labs and vitals">
+                <Badge tone="green" dot>Working</Badge>
               </SettingRow>
             </div>
           </Card>

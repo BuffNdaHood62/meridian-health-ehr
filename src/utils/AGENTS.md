@@ -17,6 +17,7 @@ Deterministic helpers: clinical decision support, record export, demo localStora
 - `format.ts` — date/number formatting and `toneTextClass` (vitals tone → Tailwind classes). Pages reuse, never re-branch.
 - `cn.ts` — class merge primitive.
 - `share.ts` — one-time/expiring share tokens; the redeem path runs as `anon`, so migration 0007 deliberately keeps anon `USAGE` on the schema.
+- `preferences.ts` — clinician UI preferences, one localStorage key each (`www-default-chart-tab`). **Not PHI** — settings are the one category allowed to sit in `localStorage` alongside the demo stores. Device-local by design: nothing follows the account to another browser, and the page copy says so. `CHART_TAB_NAMES` is the shared vocabulary between Settings and PatientDetail; keep them coupled rather than duplicating the list. Upgrade path is a `user_preferences` row behind an RPC, which changes this file and not its callers.
 
 ## Work Guidance
 - `tsconfig.json` includes all of `src`, so bare `src/utils/*.ts` files ARE in `npx tsc --noEmit -p .` scope — unlike the repo-wide lint/typecheck runs (which time out here, see root AGENTS.md), this one is the gate. Vitest runs in a node environment: a util used only by a page still needs its logic covered by `.test.ts`, not by browser wiring.

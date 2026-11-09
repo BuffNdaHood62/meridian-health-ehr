@@ -15,15 +15,22 @@ import { loadPatient, useAsync } from "../data/api";
 import type { Patient } from "../types";
 import { bmi, bmiCategory, formatDate, formatDateTime, bpTone, hrTone, spo2Tone, tempTone, toneTextClass, ageFromDob } from "../utils/format";
 import { cn } from "../utils/cn";
+import { CHART_TAB_NAMES, getDefaultChartTab } from "../utils/preferences";
 import { ShareActions } from "../components/ui/ShareActions";
 
-const tabs = ["Overview", "Vitals", "Medications", "Labs", "History", "Notes"] as const;
+const tabs = CHART_TAB_NAMES;
 type Tab = (typeof tabs)[number];
+
+/** A stale or unknown stored preference opens Overview, never a blank panel. */
+function initialTab(): Tab {
+  const stored = getDefaultChartTab();
+  return stored && (tabs as readonly string[]).includes(stored) ? (stored as Tab) : "Overview";
+}
 
 export default function PatientDetail() {
   const { id } = useParams();
   const { data: patient, loading, error } = useAsync(() => loadPatient(id || ""), [id]);
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   if (loading) {
     return <div className="flex items-center justify-center py-24 text-sm text-slate-500">Loading patient…</div>;

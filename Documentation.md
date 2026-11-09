@@ -5,6 +5,50 @@ Durable log of meaningful changes and why they were made. Newest first.
 ---
 
 
+## 2026-11-09 — Settings stops promising a save it never performed
+
+The header button said "Save changes" while doing nothing at all: the profile fields
+are read-only, the security rows save themselves through the adapter, and the four
+switches below only held `useState`. Leaving the page discarded them. That is the same
+defect the Security card already names in a comment — a control that silently does
+nothing tells a clinician the control protected them — so the whole page got held to
+that standard instead of just deleting the button.
+
+### What actually works now
+- **Save changes button removed.** The subtitle states the rule: every control saves
+  itself, so nothing is left pending on the page. A button that batches writes to a
+  transport that doesn't exist was the lie, not the layout.
+- **Default chart tab is real** (`src/utils/preferences.ts`, key `www-default-chart-tab`).
+  `PatientDetail.tsx` reads it at mount, validating against the tab list it renders, so a
+  stale or unknown value opens Overview rather than a blank panel. `CHART_TAB_NAMES` moved
+  into the util so the picker and the chart cannot drift — the select previously offered 4 of
+  the 6 tabs the chart actually has.
+- **High-contrast mode, and all three notification toggles, became `Not in this build`
+  badges.** There is no contrast stylesheet, no email transport and no push service in this
+  app, so a switch had nothing to turn on and the setting had no consumer to mislead later.
+  One honest counterexample stays in the card: critical alerts *do* surface in the top-bar
+  bell, so that row says `Working`.
+- **"Change photo" was a `<button>` with no handler.** Replaced with a line saying photo
+  upload is not in this build.
+- `saveDefaultChartTab()` returns `false` when the browser refuses storage, and the page
+  prints that instead of claiming success — `preferences.test.ts` covers the refusal path.
+
+### Ceiling
+Device-local, one key per preference, no server row. A `user_preferences` table behind an
+RPC replaces `src/utils/preferences.ts` without touching either call site; the copy on the
+page already warns that a preference does not follow the account to another browser.
+
+### Verification
+`npx vitest run` 71/71 (4 new) · `npx tsc --noEmit -p .` clean · `npx eslint` on the four
+changed files 0 warnings · `vite build` and `vite build --mode demo` both produce the
+single-file dist · demo artifact in the browser: set Labs → note confirms → chart opens on
+Labs → survives a full document reload → garbage stored value falls back to Overview in both
+the chart and the picker. No screenshots: the in-app browser surface stayed hidden, so this
+is structural (accessibility-tree) verification, not visual.
+`npm run build` intermittently fails here with `[vite:esbuild-transpile] remove
+%TEMP%\esbuild-<sha>: Access is denied` — Windows is locking the transpile temp file, not a
+code fault; `TMP`/`TEMP` pointed at a repo-local directory builds clean.
+
 ## 2026-11-05 — TOTP enrolment and password change move into Settings
 
 ADR-0005 §6a listed this as client work the invite flow needs; it was also the
@@ -57,6 +101,8 @@ behaviour was observed. Docs asserting "no enrolment UI exists" were corrected i
 R-14. Also untouched and still misleading: the Settings header "Save changes" button
 and the display/notification toggles persist nothing — a pre-existing no-op that
 should read "Not in this build" instead.
+  — closed by the 2026-11-09 entry, which removed the button, badged the toggles, and
+  made the chart-tab preference real instead of merely labelling it.
 
 ---
 
