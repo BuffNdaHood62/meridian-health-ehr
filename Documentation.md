@@ -5,6 +5,41 @@ Durable log of meaningful changes and why they were made. Newest first.
 ---
 
 
+## 2026-11-09 — The live site was mailing localhost confirmation links (R-23)
+
+Reported from `meridian-health-ehr.vercel.app`: the email verification link opened a
+localhost address. Root cause is not in the app's URL handling — `signUp()` in
+`src/identity/supabase-adapter.ts` passed no `emailRedirectTo`, so GoTrue built the link
+from the project's **Site URL**, which is still a dev-machine default because nothing in
+this repo ever set it. Runbook §4 listed Confirm-email and TOTP toggles and had no URL
+configuration step at all; that gap is how this reached a live clinical URL.
+
+Same defect will hit password recovery and ADR-0005 invitations, since all three build
+links the same way — the `invite` function reads `INVITE_REDIRECT_TO`, which is unset.
+
+### Both halves, and only one of them is code
+- `signUp()` now sends `emailRedirectTo` from `window.location.origin`, so the link host
+  matches wherever the app is actually being served (preview deploys included). Guarded on
+  `^https?://` because a `file://` origin reports `"null"`.
+- **The code half changes nothing on its own.** GoTrue silently drops a `redirect_to` that
+  is not on its Redirect URLs allowlist and falls back to Site URL — so the Dashboard edit is
+  the actual fix: Site URL `https://meridian-health-ehr.vercel.app`, allowlist the same origin
+  plus `http://localhost:5173/**` only if dev links are wanted. Written into §4 with the
+  HashRouter warning: the redirect must be the origin root, since GoTrue appends its session
+  as `#access_token=…` and a path-based `/confirm` route does not exist in a single-file build.
+
+### Deliberately not added
+No `VITE_APP_URL` build variable — `window.location.origin` already knows where it is
+running, and a second source of truth for the same fact is how Site URL got stale.
+
+### Verification and what is NOT verified
+`npx tsc --noEmit -p .` clean, `npx eslint` on the adapter 0 problems, `npx vitest run`
+green. The localhost link itself is **not** reproduced or re-verified from here — the CLI
+does not expose auth settings, so the Site URL value is inferred from the symptom and the
+fix is untested until someone reads the Dashboard field and clicks a real confirmation
+mail. Expected outcome afterwards: the link lands on `/`, and because confirmed email is not
+the same thing as `profiles.verified`, the user should reach `/login/pending`, not the app.
+
 ## 2026-11-09 — Settings stops promising a save it never performed
 
 The header button said "Save changes" while doing nothing at all: the profile fields

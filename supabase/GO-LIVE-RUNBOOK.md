@@ -35,6 +35,10 @@ because it shells out to a local `pg_dump` that isn't installed.
       `StartupBlocked`, no demo banner or demo entry, and a bad credential returns
       GoTrue's own "Invalid login credentials" — so the anon key is inlined and the
       backend is genuinely reached.
+- [ ] §4 **GoTrue URL configuration is wrong and breaks signup (R-23).** Site URL is
+      still a localhost address, so the email confirmation link mailed to a real
+      signup points at a dev machine. Set Site URL + Redirect URLs to
+      `https://meridian-health-ehr.vercel.app` before testing any signup path.
 - [ ] §4 GoTrue: confirm **Confirm email = ON** and **TOTP = ON** in the
       Dashboard. Not verified from here — the CLI does not report auth settings.
 - [ ] §5 First admin bootstrap + one enrolled TOTP factor. `auth.mfa_factors`
@@ -156,6 +160,26 @@ select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
 
 ## 4. GoTrue settings (Dashboard, not SQL)
 
+- [ ] **Authentication → URL Configuration — this is broken right now.** Site URL is
+      still a localhost address, so every email link GoTrue mints (signup
+      confirmation now; password recovery and invites as soon as they are wired)
+      points at a dev machine and a real person can never activate their account.
+      - Site URL: `https://meridian-health-ehr.vercel.app`
+      - Redirect URLs: `https://meridian-health-ehr.vercel.app/**` — add
+        `http://localhost:5173/**` only if you want links usable during local dev.
+      Keep it to the exact origin. The router is `HashRouter`, so the link must land
+      on `/` and let GoTrue append its `#access_token=…` fragment — a path-based
+      `/confirm` URL does not exist in a single-file build and would 404.
+      `signUp()` already sends `emailRedirectTo` from `window.location.origin`, but
+      GoTrue **silently drops** a redirect that is not on this allowlist and falls
+      back to Site URL, so setting the allowlist is the fix and the code alone does
+      nothing.
+      Verify after saving: run a real signup on the deployed site, open the mail, and
+      confirm the link's host is `meridian-health-ehr.vercel.app`. The click should
+      land on `/login/pending` — confirmed email is not the same as `verified`, which
+      only `approve_profile()` grants (R-14).
+- [ ] `INVITE_REDIRECT_TO` must be set on the `invite` Edge Function to the same
+      origin, or ADR-0005 invitations inherit the localhost Site URL too.
 - [ ] Authentication → Providers → Email: **Confirm email = ON**. A session
       without a confirmed email is not a supported state (ADR-0003).
 - [ ] Authentication → Multi-Factor Auth: TOTP ON, issue `aal2` on verify.

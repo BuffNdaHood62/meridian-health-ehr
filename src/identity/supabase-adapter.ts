@@ -229,13 +229,31 @@ function latestMfaTimestamp(methods: { method: string; timestamp: number }[] | s
   return latest;
 }
 
+/**
+ * Without this, GoTrue builds the confirmation link from the project's Site URL,
+ * which is a localhost address until someone sets it in the Dashboard — so a real
+ * signup on the deployed site gets mailed a link that goes nowhere. GoTrue also
+ * silently ignores a `redirect_to` that is not on its Redirect URLs allowlist, so
+ * this only takes effect once the deployed origin is allowlisted
+ * (supabase/GO-LIVE-RUNBOOK.md §4). Origin, not a build-time constant: preview
+ * deploys get their own host for free.
+ */
+function emailRedirectTo(): string | undefined {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return /^https?:\/\//.test(origin) ? `${origin}/` : undefined;
+}
+
 async function signup(input: SignupInput): Promise<AdapterOutcome> {
   const client = requireSupabase();
   const email = input.email.trim();
+  const redirectTo = emailRedirectTo();
   const { error } = await client.auth.signUp({
     email,
     password: input.password,
-    options: { data: { full_name: input.name.trim(), role: input.role } },
+    options: {
+      data: { full_name: input.name.trim(), role: input.role },
+      ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
+    },
   });
   if (error) return { kind: "error", message: error.message };
 
