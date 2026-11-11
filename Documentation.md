@@ -5,7 +5,7 @@ Durable log of meaningful changes and why they were made. Newest first.
 ---
 
 
-## 2026-11-09 — All six GoTrue email templates now live in the repo
+## 2026-11-11 — All six GoTrue email templates now live in the repo
 
 The Dashboard is the only place Supabase keeps an email template, so every one of them
 was effectively unmanaged: nothing in git described what a real user receives, and the
@@ -50,7 +50,7 @@ ignoring of `border-radius` are unverified. The link host in every template is s
 localhost Site URL until R-23's Dashboard half is done; these files change the look of the
 link, not where it points.
 
-## 2026-11-09 — The live site was mailing localhost confirmation links (R-23)
+## 2026-11-11 — The live site was mailing localhost confirmation links (R-23)
 
 Reported from `meridian-health-ehr.vercel.app`: the email verification link opened a
 localhost address. Root cause is not in the app's URL handling — `signUp()` in
