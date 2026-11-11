@@ -1,0 +1,101 @@
+<!--
+  Supabase → Authentication → Email Templates → "Invite user".
+  Subject field:  You have been invited to Wellness with Writingale
+
+  STATUS: the flow is authored, not live. `supabase/functions/invite` calls
+  admin.generateLink / admin.inviteUserByEmail but is NOT deployed, and
+  claim_invitation() ships in `0011`, which is unapplied (ADR-0005). Configure
+  this before the cutover so the first real invitation is not sent with GoTrue's
+  default template.
+
+  Variables: {{ .Email }} and {{ .ConfirmationURL }} — keep verbatim.
+  The link host comes from Site URL / the function's INVITE_REDIRECT_TO
+  (GO-LIVE-RUNBOOK.md §4, R-23). A localhost Site URL makes this mail dead.
+
+  Copy rules: no invented expiry, no security claims, and it states the two facts
+  that matter to the recipient — they choose their own password (ADR-0005 refuses
+  to mail generated ones), and the inviter's role assignment is not theirs to pick.
+-->
+<div style="margin:0;padding:0;background-color:#f1f5f9;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    A platform owner invited you. Set your own password to create the account.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+
+          <tr>
+            <td style="padding:0 4px 20px 4px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="44" height="44" align="center" valign="middle" style="width:44px;height:44px;background-color:#13726c;border-radius:12px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;font-size:26px;font-weight:700;line-height:44px;color:#ffffff;">+</td>
+                  <td style="padding-left:12px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+                    <div style="font-size:16px;font-weight:700;line-height:20px;color:#0f172a;">Wellness with Writingale</div>
+                    <div style="font-size:12px;font-weight:600;line-height:16px;color:#13726c;">EMR Platform</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px 28px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+
+              <div style="font-size:22px;font-weight:700;line-height:28px;color:#0f172a;">You are invited to the clinical workspace</div>
+
+              <div style="font-size:15px;line-height:24px;color:#475569;padding-top:12px;">
+                A platform owner created an invitation for
+                <span style="font-weight:600;color:#0f172a;">{{ .Email }}</span>. Accepting it creates
+                your account; you choose the password yourself, because nobody should be emailing
+                credentials to you.
+              </div>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px 0;">
+                <tr>
+                  <td align="center" style="background-color:#13726c;border-radius:12px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:13px 26px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:600;line-height:20px;color:#ffffff;text-decoration:none;border-radius:12px;">Accept invitation and set a password</a>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="font-size:13px;line-height:20px;color:#64748b;padding-top:16px;">
+                If the button does not work, copy this link into your browser:<br>
+                <a href="{{ .ConfirmationURL }}" style="color:#13726c;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
+              </div>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0 0;">
+                <tr>
+                  <td style="background-color:#eff9f8;border-left:3px solid #13726c;border-radius:8px;padding:14px 16px;">
+                    <div style="font-size:13px;line-height:20px;color:#115b58;">
+                      <span style="font-weight:700;">Your role comes with the invitation.</span>
+                      Accepting attaches the role and workspace access the owner selected for you;
+                      you cannot change either from this screen. This message contains no client
+                      records.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 4px 0 4px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+              <div style="font-size:12px;line-height:18px;color:#94a3b8;">
+                Wellness with Writingale &middot; EMR Platform
+              </div>
+              <div style="font-size:12px;line-height:18px;color:#94a3b8;padding-top:4px;">
+                Were you not expecting this? Ignore the email &mdash; no account exists until you
+                accept. Questions: <a href="mailto:support@example.org" style="color:#64748b;text-decoration:underline;">support@example.org</a>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>

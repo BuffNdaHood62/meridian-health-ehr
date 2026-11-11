@@ -5,6 +5,51 @@ Durable log of meaningful changes and why they were made. Newest first.
 ---
 
 
+## 2026-11-09 — All six GoTrue email templates now live in the repo
+
+The Dashboard is the only place Supabase keeps an email template, so every one of them
+was effectively unmanaged: nothing in git described what a real user receives, and the
+defaults would have been the first thing an invited clinician saw. `supabase/email-templates/`
+now holds all six — `confirm-signup`, `invite-user`, `reset-password`, `change-email`,
+`magic-link`, `reauthentication` — plus a README mapping each to its Dashboard entry, its
+subject line, and whether this app actually sends it.
+
+### Only one is sent today
+`signUp()` fires Confirm signup. `functions/invite` is undeployed and needs `0011`
+(ADR-0005); there is no forgot-password route, no `updateUser({ email })` call, no
+`signInWithOtp`, and step-up is `/login/step-up` + `has_recent_mfa()` rather than an email
+reauth. Each file says in its header which flow is dormant, so nobody reads a template as
+evidence that a feature exists. They are configured anyway, because a generic GoTrue
+default on a clinical system is how a recipient learns about the product from a
+phishing-shaped link.
+
+### Design, not decoration
+One skeleton across all six, taken from the app rather than invented: `#f1f5f9` canvas
+(the `body` background in `src/index.css`), white card with a `#e2e8f0` hairline and 16px
+radius, the brand cross tile + wordmark from `Login.tsx`, `#13726c` actions, and a
+brand-50 panel with a brand-600 rule carrying the single fact that flow needs. Inter first
+with Helvetica/Arial fallback, every rule inline, tables for layout — Outlook and Gmail
+strip `<style>` and `@import`. The logo cell is a text `+` mirroring `WwwLogo.tsx`; the
+real foundation mark goes in when the foundation supplies one.
+
+### Copy kept to what runs
+No expiry times (none are configured), no "secure/encrypted/HIPAA" wording, and
+Reauthentication says a change was **requested** rather than that anything was detected —
+there is no detection in this build. Confirm signup and Invite user both state that
+confirming an address is not approval, because `approve_profile()` grants access and that
+is exactly what `/login/pending` exists to explain. Reset password says a reset neither
+removes nor restores a second factor, which is the consequence Settings already warns
+about (R-14).
+
+### Verification
+Rendered `invite-user.html` in a browser: wordmark order correct, both action links carry
+`{{ .ConfirmationURL }}` literally, tile and button compute to `rgb(19,114,108)` =
+brand-600, 560px card present. Tag balance and structure checked across all six. **Not
+rendered in a mail client** — no inbox exists here, so spacing, dark mode and Outlook's
+ignoring of `border-radius` are unverified. The link host in every template is still the
+localhost Site URL until R-23's Dashboard half is done; these files change the look of the
+link, not where it points.
+
 ## 2026-11-09 — The live site was mailing localhost confirmation links (R-23)
 
 Reported from `meridian-health-ehr.vercel.app`: the email verification link opened a

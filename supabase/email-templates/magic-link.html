@@ -1,0 +1,99 @@
+<!--
+  Supabase → Authentication → Email Templates → "Magic link or OTP".
+  Subject field:  Your Wellness with Writingale sign-in link
+
+  STATUS: dormant in this app. Nothing calls signInWithOtp, and the identity state
+  machine (src/identity/state.ts) has no outcome for a magic-link session — sign-in
+  is password-first, then TOTP at /login/mfa. Configure it anyway so that if
+  passwordless is ever enabled it does not inherit GoTrue's default wording, but do
+  not describe passwordless sign-in as available in any UI copy.
+
+  Variables: {{ .Email }} and {{ .ConfirmationURL }} — keep verbatim.
+  Link host: Site URL / allowlisted redirect (GO-LIVE-RUNBOOK.md §4, R-23).
+
+  Copy rules: says in-band that a link is ONE factor. That is accurate — server-side
+  step-up is has_recent_mfa(), which needs a fresh totp/webauthn amr, so a
+  magic-link session still cannot sign an order.
+-->
+<div style="margin:0;padding:0;background-color:#f1f5f9;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    This link signs you in on this device. It is a single factor.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px;max-width:100%;">
+
+          <tr>
+            <td style="padding:0 4px 20px 4px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="44" height="44" align="center" valign="middle" style="width:44px;height:44px;background-color:#13726c;border-radius:12px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;font-size:26px;font-weight:700;line-height:44px;color:#ffffff;">+</td>
+                  <td style="padding-left:12px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+                    <div style="font-size:16px;font-weight:700;line-height:20px;color:#0f172a;">Wellness with Writingale</div>
+                    <div style="font-size:12px;font-weight:600;line-height:16px;color:#13726c;">EMR Platform</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:32px 28px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+
+              <div style="font-size:22px;font-weight:700;line-height:28px;color:#0f172a;">Sign in with this link</div>
+
+              <div style="font-size:15px;line-height:24px;color:#475569;padding-top:12px;">
+                A sign-in link was requested for
+                <span style="font-weight:600;color:#0f172a;">{{ .Email }}</span>. Opening it signs you
+                in on whichever device and browser you use.
+              </div>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 4px 0;">
+                <tr>
+                  <td align="center" style="background-color:#13726c;border-radius:12px;">
+                    <a href="{{ .ConfirmationURL }}"
+                       style="display:inline-block;padding:13px 26px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;font-size:15px;font-weight:600;line-height:20px;color:#ffffff;text-decoration:none;border-radius:12px;">Open sign-in link</a>
+                  </td>
+                </tr>
+              </table>
+
+              <div style="font-size:13px;line-height:20px;color:#64748b;padding-top:16px;">
+                If the button does not work, copy this link into your browser:<br>
+                <a href="{{ .ConfirmationURL }}" style="color:#13726c;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
+              </div>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0 0;">
+                <tr>
+                  <td style="background-color:#eff9f8;border-left:3px solid #13726c;border-radius:8px;padding:14px 16px;">
+                    <div style="font-size:13px;line-height:20px;color:#115b58;">
+                      <span style="font-weight:700;">This link is one factor, not two.</span>
+                      Reading records works; actions that need a second check, such as signing an
+                      order, still ask for your authenticator code. This message contains no client
+                      records.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 4px 0 4px;font-family:Inter,'Helvetica Neue',Arial,sans-serif;">
+              <div style="font-size:12px;line-height:18px;color:#94a3b8;">
+                Wellness with Writingale &middot; EMR Platform
+              </div>
+              <div style="font-size:12px;line-height:18px;color:#94a3b8;padding-top:4px;">
+                Did not request this? Ignore the email and change your password from Settings.
+                Questions: <a href="mailto:support@example.org" style="color:#64748b;text-decoration:underline;">support@example.org</a>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>

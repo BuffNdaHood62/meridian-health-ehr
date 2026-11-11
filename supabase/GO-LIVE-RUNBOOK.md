@@ -180,6 +180,11 @@ select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       only `approve_profile()` grants (R-14).
 - [ ] `INVITE_REDIRECT_TO` must be set on the `invite` Edge Function to the same
       origin, or ADR-0005 invitations inherit the localhost Site URL too.
+- [ ] Authentication → Email Templates: paste the bodies from
+      `supabase/email-templates/` — all six entries, not just Confirm signup. That
+      folder's README maps each file to its Dashboard entry, its subject line, and
+      whether this app actually sends it today (four do not). The Dashboard holds the
+      only live copy, so edit the repo file and paste it there.
 - [ ] Authentication → Providers → Email: **Confirm email = ON**. A session
       without a confirmed email is not a supported state (ADR-0003).
 - [ ] Authentication → Multi-Factor Auth: TOTP ON, issue `aal2` on verify.
