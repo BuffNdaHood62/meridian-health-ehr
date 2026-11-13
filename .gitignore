@@ -27,7 +27,20 @@ npm-debug.log*
 # Supabase local CLI artifacts, and the scratch dumps/probe scripts that
 # `supabase db query -f` and the go-live runbook write here.
 supabase/.temp/
-supabase/db/
+# Scratch stays out (generated harness SQL, the hosted schema snapshot, the 0011
+# draft splits); the scripts Documentation.md and the runbook *cite by path* are
+# tracked — a fresh clone has to be able to re-run the gate checks and the seeded
+# credential closure, not take them on faith. Note `supabase/db/*`, not
+# `supabase/db/`: git never descends into an ignored directory, so a directory
+# rule would make every negation below silently inert.
+supabase/db/*
+!supabase/db/check-*.sql
+!supabase/db/post-apply-verify.sql
+!supabase/db/revoke-seeded-accounts.sql
+!supabase/db/probe-revoked.sql
+!supabase/db/approve-live.sql
+!supabase/db/dryrun-approve.sql
+!supabase/db/snapshot-manifest.sql
 
 # Agent-local state (memory, sessions) — never committed
 .workbuddy-ai/
