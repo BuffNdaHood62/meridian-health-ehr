@@ -4,6 +4,65 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-11-13 — Owner/admin handover to `michaelnnamdi62@gmail.com` authored; the ask was first read as a break-glass change
+
+The request came as "change the break-glass admin account to
+`michaelnnamdi62@gmail.com`". That is not executable as written:
+`michaelnnamdi62@gmail.com` is one of the two platform owners, and `0011` refuses an
+owner as break-glass from both directions — `set_break_glass_admin()` raises
+`BREAK_GLASS_CANNOT_BE_OWNER` (`:211-214`) and `guard_platform_owners()` blocks the
+mirror insert (`:130-133`), which is 0011 asserting decision 5 of ADR-0005
+(`:117-126`). The reason is not tidiness: break-glass is worth having precisely
+because neither owner knows its password, so pointing it at an owner's everyday
+mailbox deletes the escape hatch that exists for the case where both mailboxes are
+lost. Confirmed with the requester: the target was the **owner/admin** account, not
+the emergency identity. Nothing in `0011` or ADR-0005 needed changing.
+
+Two facts about scope that fell out of that:
+
+- `0011` is still `STATUS: authored, NOT APPLIED`, so `public.platform`,
+  `break_glass_user_id` and `set_break_glass_admin()` do not exist on
+  `zdtaludwhxnjutosrnvi`. There was no live break-glass *designation* to change;
+  the break-glass identity is a GoTrue account, `admin@www.clinic` (§5b).
+- The owner/admin that does exist is `organizations.owner_user_id`, seeded
+  `role='admin'` at `0003_seed.sql:35` and adopted by `0010`'s backfill
+  (`0010:351-359`, expected state at `0010:1092`).
+
+### Why it is hand-written SQL and not `transfer_ownership()`
+
+`transfer_ownership()` (`0010:927-971`) needs `is_org_owner()` from a live admin
+session and `has_recent_mfa()`. The current owner is `disabled_at` with an unknown
+password, so `current_org_id()` fails closed and the RPC raises `FORBIDDEN`; and
+`auth.mfa_factors` has 0 rows, so it would raise `STEP_UP_REQUIRED` even from a
+working session. There is no route to this change that does not bypass a control,
+so the work is to make the bypass explicit rather than to pretend there is a clean
+one. `supabase/GO-LIVE-RUNBOOK.md` §5c and **R-24** carry it;
+`supabase/db/transfer-owner-to-michael.sql` is the annotated scratch copy (that
+directory is gitignored, so §5c is the tracked text).
+
+**Not applied.** The project was not touched — `npx supabase migration list
+--remote` was blocked here, and remote writes need a human in the loop. §5c is
+ready for Dashboard → SQL Editor.
+
+### What §5c pins down
+
+- Asserts before writing: org active, target exists, `verified`, `disabled_at`
+  null, active membership, and not already the owner — a null
+  `owner_user_id` would make `current_role_keys()` return `{}` for everyone.
+- `owner_user_id` **and** the Admin-1 instance both move. Ownership alone is enough
+  for `is_admin()` because `current_role_keys()` unions `'admin'` for the owner
+  (`0010:258-259`); the assignment is what makes it durable and revocable on its
+  own row.
+- Michael keeps his doctor assignment, per ADR-0005:52-54 — ownership is orthogonal
+  to role and he retains clinical access. `admin@www.clinic` also keeps its Admin-1
+  row, per ADR-0005:113-114.
+- Writes its own `ownership_transferred` `auth_events` + `audit_log` rows, since
+  the RPC's audit statements never fire on this path.
+- Verification is the §6 impersonation probe, not a glance at `profiles.role`: that
+  column is the legacy cache no policy reads (`0010:285-286`), and
+  `sync_legacy_profile()` orders by `slot_no`, where doctor and Admin-1 are both
+  `slot_no = 1`, so its pick is a tie.
+
 
 ## 2026-11-11 — All six GoTrue email templates now live in the repo
 

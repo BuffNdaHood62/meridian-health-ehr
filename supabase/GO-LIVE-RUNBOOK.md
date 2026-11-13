@@ -44,6 +44,12 @@ because it shells out to a local `pg_dump` that isn't installed.
 - [ ] §5 First admin bootstrap + one enrolled TOTP factor. `auth.mfa_factors`
       currently has **0 rows** while `require_step_up_for_orders = true`, so no
       real session can author an order until a factor exists.
+- [ ] §5c **Owner/admin account handover — procedure authored, not run.** The org
+      owner is still `admin@www.clinic`, a disabled account that cannot act. Running
+      §5c moves ownership + the Admin-1 instance to
+      `michaelnnamdi62@gmail.com`; it is a postgres-bypass write (R-24) because
+      `transfer_ownership()` needs a live admin session and an enrolled factor,
+      neither of which exists.
 - [x] §5 Approved the pending account: run as a verified admin,
       `select public.approve_profile('0cf4097a-8f37-406e-a984-bfb372e1fc9b','doctor')`
       — done 2026-10-26 for `michaelnnamdi62@gmail.com`. Impersonating the admin
@@ -265,6 +271,151 @@ revocation is evidence, not folklore.
 
 To use the break-glass admin again, set a new password in Dashboard →
 Authentication → Users; there is deliberately no known value.
+
+## 5c. Hand the organisation's owner/admin account to `michaelnnamdi62@gmail.com`
+
+Asked for 2026-11-13. The owner/admin today is `admin@www.clinic`: seeded with
+`role='admin'` at `migrations/0003_seed.sql:35` and adopted as
+`organizations.owner_user_id` by `0010`'s backfill (`0010:351-359`, expected state
+recorded at `0010:1092`).
+
+The audited path cannot run. `transfer_ownership()` (`0010:927-971`) demands
+`is_org_owner()` from a live admin session **and** `has_recent_mfa()`.
+`admin@www.clinic` was revoked via `disabled_at` in §5b with its password replaced
+by a value nobody holds, so `current_org_id()` is NULL and the RPC raises
+`FORBIDDEN`; and `auth.mfa_factors` still has **0 rows** (§5), so it would raise
+`STEP_UP_REQUIRED` even from a working admin session.
+
+This is therefore a privileged SQL-editor write — the same narrow escape hatch §5
+already sanctions for `require_step_up_for_orders`, with the same consequence: it
+bypasses a step-up control, and that is recorded as **R-24** rather than left as
+folklore.
+
+This is **not** the break-glass identity. `platform.break_glass_user_id` belongs to
+`0011`, which is unapplied; break-glass stays `admin@www.clinic`, and it keeps its
+Admin-1 assignment on purpose because ADR-0005:113-114 expects it to assign
+non-admin roles during a recovery.
+
+`supabase/db/transfer-owner-to-michael.sql` is the annotated copy; that directory
+is gitignored, so the statements below are the tracked source. Run as one batch,
+read the final select, then commit.
+
+```sql
+begin;
+
+create temp table _h on commit drop as
+select o.id            as org_id,
+       o.owner_user_id as old_owner,
+       (select p.id from public.profiles p
+        where lower(p.email) = 'michaelnnamdi62@gmail.com') as new_owner
+  from public.organizations o
+ where lower(o.slug) = 'www' and o.status = 'active';
+
+-- Refuse rather than half-do it: a null owner makes current_role_keys() return {}
+-- for everyone and the org unmanageable.
+do $$
+declare v record;
+begin
+  select * into v from _h;
+  if not found                 then raise exception 'ORG_NOT_FOUND';      end if;
+  if v.new_owner is null       then raise exception 'TARGET_NOT_FOUND';   end if;
+  if v.new_owner = v.old_owner then raise exception 'ALREADY_THE_OWNER';  end if;
+  if exists (select 1 from public.profiles p
+              where p.id = v.new_owner
+                and (not p.verified or p.disabled_at is not null)) then
+    raise exception 'TARGET_NOT_VERIFIED_AND_ACTIVE';
+  end if;
+  if not exists (select 1 from public.org_memberships m
+                  where m.user_id = v.new_owner and m.org_id = v.org_id
+                    and m.status = 'active') then
+    raise exception 'TARGET_NOT_AN_ACTIVE_MEMBER';
+  end if;
+end;
+$$;
+
+insert into public.org_role_instances (org_id, role_key, slot_no, label)
+select h.org_id, 'admin', 1, 'Admin-1' from _h h
+on conflict (org_id, role_key, slot_no) do nothing;
+
+insert into public.role_assignments (org_id, membership_id, role_instance_id, assigned_by)
+select h.org_id, m.id, i.id, null
+  from _h h
+  join public.org_memberships m    on m.org_id = h.org_id and m.user_id = h.new_owner
+  join public.org_role_instances i on i.org_id = h.org_id
+       and i.role_key = 'admin' and i.slot_no = 1 and i.status = 'active'
+ where m.status = 'active'
+on conflict do nothing;
+
+update public.organizations o
+   set owner_user_id = h.new_owner
+  from _h h
+ where o.id = h.org_id;
+
+select public.sync_legacy_profile(h.new_owner) from _h h;
+
+-- The RPC writes this evidence itself; this path has to write it by hand.
+insert into public.auth_events (org_id, user_id, event, detail)
+select h.org_id, h.new_owner, 'ownership_transferred',
+       jsonb_build_object('from', h.old_owner, 'to', h.new_owner,
+                          'mechanism', 'sql-editor-as-postgres',
+                          'reason', 'transfer_ownership() unusable: current owner '
+                                    || 'disabled, no TOTP factor enrolled')
+  from _h h;
+
+insert into public.audit_log (org_id, actor_id, action, entity, entity_id, detail)
+select h.org_id, null, 'update', 'organizations', h.org_id::text,
+       jsonb_build_object('owner_user_id', h.new_owner,
+                          'previous_owner_user_id', h.old_owner,
+                          'granted_role_key', 'admin')::text
+  from _h h;
+
+select o.slug, po.email as owner_email,
+       (select array_agg(distinct ri.role_key)
+          from public.role_assignments ra
+          join public.org_memberships m     on m.id = ra.membership_id
+          join public.org_role_instances ri on ri.id = ra.role_instance_id
+         where m.user_id = o.owner_user_id and ra.revoked_at is null) as owner_roles
+  from public.organizations o
+  join public.profiles po on po.id = o.owner_user_id
+ where lower(o.slug) = 'www';
+
+-- commit;   only after that row says michaelnnamdi62@gmail.com
+```
+
+What the result means:
+
+- `owner_user_id` → Michael. `current_role_keys()` unions `'admin'` for the owner
+  outright (`0010:258-259`), so authority follows the ownership flip immediately;
+  the Admin-1 assignment is what makes it durable, visible and revocable on its own
+  row.
+- Michael keeps his doctor assignment. ADR-0005:52-54 says ownership is orthogonal
+  to role and he retains clinical access, so `owner_roles` is expected to read
+  `{doctor,admin}`.
+- `profiles.role` is only the legacy cache (`0010:285-286`) and no policy reads it.
+  `sync_legacy_profile()` picks the lowest `slot_no` active assignment, and doctor
+  and Admin-1 are both `slot_no = 1`, so the cached value is a tie — do not read it
+  as the authority.
+- Nothing revokes `admin@www.clinic`'s Admin-1 row. While it is `disabled_at` it
+  grants nothing.
+
+Then verify by impersonation the way §6 does it, before declaring it done:
+
+```sql
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"0cf4097a-8f37-406e-a984-bfb372e1fc9b","role":"authenticated","aud":"authenticated","aal":"aal1"}';
+select public.is_admin(), public.current_org_id(), count(*) from public.patients;
+reset role; rollback;
+```
+
+Expect `is_admin() = true`, a non-null org, and Michael's own patient count
+unchanged from before. Re-run with `admin@www.clinic`'s uuid: still NULL / 0 rows.
+
+Reversal is the same shape — repoint `owner_user_id` and
+`update public.role_assignments set revoked_at = now()` for the Admin-1 row, with
+its own audit rows. Be honest about what that buys: returning ownership to
+`admin@www.clinic` restores a state that cannot act at all, which is the reason
+this handover is worth doing.
 
 ## 6. Gate checks — these four decide whether the apply passed
 
