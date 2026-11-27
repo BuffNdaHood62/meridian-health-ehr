@@ -9,6 +9,7 @@ import { Card, CardHeader } from "../components/ui/Card";
 import { Avatar } from "../components/ui/Avatar";
 import { Badge } from "../components/ui/Badge";
 import { ErrorNote } from "../components/ui/ErrorNote";
+import { PasswordInput } from "../components/ui/PasswordInput";
 import { currentUser } from "../data/mockData";
 import { useAuth } from "../auth";
 import { cn } from "../utils/cn";
@@ -465,18 +466,29 @@ function Field({
   return (
     <div>
       <label className="mb-1 block text-xs font-medium text-slate-500">{label}</label>
-      <input
-        type={type}
-        value={editable ? value : undefined}
-        defaultValue={editable ? undefined : value}
-        readOnly={!editable}
-        data-testid={testId}
-        {...(onChange ? { onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value) } : {})}
-        className={cn(
-          "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100",
-          editable ? "bg-white" : "bg-slate-50"
-        )}
-      />
+      {type === "password" && editable ? (
+        <PasswordInput
+          value={value}
+          data-testid={testId}
+          onChange={(e) => onChange?.(e.target.value)}
+          className={cn(
+            "w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100"
+          )}
+        />
+      ) : (
+        <input
+          type={type}
+          value={editable ? value : undefined}
+          defaultValue={editable ? undefined : value}
+          readOnly={!editable}
+          data-testid={testId}
+          {...(onChange ? { onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value) } : {})}
+          className={cn(
+            "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 outline-none focus:border-brand-300 focus:bg-white focus:ring-2 focus:ring-brand-100",
+            editable ? "bg-white" : "bg-slate-50"
+          )}
+        />
+      )}
     </div>
   );
 }

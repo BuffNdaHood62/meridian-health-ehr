@@ -82,6 +82,25 @@ describe("SupabaseIdentityAdapter signup", () => {
     expect(outcome).toHaveProperty("message", expect.stringMatching(/check your email/i));
   });
 
+  it("turns a confirmation-email delivery failure into actionable copy", async () => {
+    const client = clientWithProfile(null);
+    client.auth.signUp.mockResolvedValue({
+      data: { session: null },
+      error: { message: "Error sending confirmation email" },
+    });
+    mocks.requireSupabase.mockReturnValue(client);
+
+    const outcome = await createSupabaseIdentityAdapter().signup({
+      name: "Jane Doe",
+      email: "jane@example.org",
+      role: "doctor",
+      password: "longenough12",
+    });
+
+    expect(outcome).toMatchObject({ kind: "error" });
+    expect(outcome).toHaveProperty("message", expect.stringMatching(/try again shortly/i));
+  });
+
   it("rejects an inactive profile instead of routing to an approval screen", async () => {
     const client = clientWithProfile({
       id: "user-1",

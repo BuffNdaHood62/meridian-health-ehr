@@ -4,6 +4,7 @@ import { ShieldCheck, Lock, UserPlus, Check } from "lucide-react";
 import { useAuth } from "../auth";
 import { ROLE_ROUTES, type Role } from "../users";
 import { DEMO_MODE } from "../config";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 const ROLES: Role[] = ["doctor", "nurse", "reception", "lab"];
 
@@ -96,8 +97,7 @@ export default function Signup() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -111,8 +111,7 @@ export default function Signup() {
           </div>
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Confirm password</label>
-            <input
-              type="password"
+            <PasswordInput
               autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}

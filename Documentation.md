@@ -4,6 +4,64 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-11-27 — Password peek controls and signup confirmation-email failure
+
+Added a shared `PasswordInput` with an accessible eye toggle to Login, Signup,
+Confirm password, step-up, doctor-code, and Settings password fields. The input
+still defaults to masked text and preserves autocomplete/test IDs.
+
+The signup screenshot's **Error sending confirmation email** was traced in Auth
+logs to the live Confirm signup template, not SMTP or the client request:
+
+```text
+html/template:.../templates/confirmation:5:14: no such template "header.html"
+```
+
+The Dashboard template still contains `{{ template "header.html" }}` but that
+partial does not exist. The repository template is already complete HTML; the
+Dashboard body must be replaced wholesale with `supabase/email-templates/confirm-signup.html`.
+The client now maps this known GoTrue error to actionable retry/support copy and
+has an adapter regression test. The Dashboard template itself was not changed
+from this environment.
+
+Verification: 74 tests passed, typecheck passed, lint had 0 errors (the same 7
+Fast Refresh warnings), and both production/demo builds passed. The built signup
+screen could not be browser-verified because Qoder Browser navigation/AX calls
+timed out again.
+
+## 2026-11-27 — Auth user deletion was blocked by the append-only event trigger
+
+Read-only live diagnostics found no `BEFORE/AFTER DELETE` triggers on `auth.users`
+and no Storage objects or Storage foreign keys. Seven public foreign keys use
+`NO ACTION`/`RESTRICT`, but the failed Dashboard deletes in Auth logs were not
+hitting them.
+
+The exact error was:
+
+```text
+ERROR: auth_events is append-only (UPDATE; migration must drop the trigger explicitly) (SQLSTATE P0001)
+```
+
+`auth_events.user_id` references `auth.users(id) ON DELETE SET NULL` (`0008:110`).
+Deleting the Auth user therefore updates the event row to clear `user_id`, and
+`auth_events_immutable` (`0008:121-125`) calls the shared `public.forbid_mutation()`
+trigger, which rejects every update. The live trigger and function match the local
+migrations; this is not schema drift.
+
+`20261127143005_allow_auth_user_event_cleanup.sql` adds a dedicated Auth-event
+trigger function. It permits only an `UPDATE` that changes `user_id` from non-null
+to null, leaves every other column unchanged, and sees that the referenced Auth
+user no longer exists. Deletes and all other updates remain forbidden. The shared
+`forbid_mutation()` function and the clinical/audit append-only triggers are not
+weakened. The seven restrictive foreign keys are intentionally unchanged; they
+remain separate blockers for organization owners and recorded clinical actors.
+
+**Applied 2026-11-27.** The migration ran in a transaction and was recorded in
+remote migration history. A rolled-back disposable-user probe deleted the Auth
+user, cleared its `auth_events.user_id`, and still rejected ordinary event updates
+and deletes. The probe left no user or event rows. No real account was deleted;
+the Dashboard deletion should now be retried for the intended user.
+
 ## 2026-11-27 — Waiting approval removed for testing; Supabase signup is immediate
 
 The requester chose **auto-approve all signups** because there is no administrator

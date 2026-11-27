@@ -3,6 +3,7 @@ import { LockKeyhole, ShieldX } from "lucide-react";
 import { Card } from "./Card";
 import { useDoctorCode, hasDoctorCode } from "../../auth-doctor";
 import { useAuth } from "../../auth";
+import { PasswordInput } from "./PasswordInput";
 
 // Shared doctor-code unlock screen (extracted from Orders, RFD §5). `pageKey`
 // is the per-page unlock slot; `page` names the gated screen in copy and test ids.
@@ -65,8 +66,7 @@ export function CodeGate({ pageKey, page, testId }: { pageKey: string; page: str
             ? `Enter your personal doctor code to open ${page}. 5 wrong attempts lock this page for 15 minutes.`
             : "First time here: set a personal doctor code (min 8 characters). You will be asked for it next visit."}
         </p>
-        <input
-          type="password"
+        <PasswordInput
           value={code}
           onChange={(e) => setLocal(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}

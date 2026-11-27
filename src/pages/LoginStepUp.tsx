@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useAuth } from "../auth";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 // ============================================================================
 // /login/step-up — a sensitive route (/orders) asked for a fresher check.
@@ -131,9 +132,8 @@ export default function LoginStepUp() {
                 <label className="mb-1.5 block text-sm font-medium text-slate-700" htmlFor="step-up-password">
                   Password
                 </label>
-                <input
+                <PasswordInput
                   id="step-up-password"
-                  type="password"
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}

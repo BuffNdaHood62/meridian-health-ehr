@@ -33,6 +33,8 @@ const NO_PROFILE_MESSAGE =
 const INACTIVE_MESSAGE = "Account access is not active. Contact an administrator.";
 const CONFIRMATION_MESSAGE =
   "Account created. Check your email to confirm the address, then sign in.";
+const EMAIL_DELIVERY_MESSAGE =
+  "We couldn't send your confirmation email. Please try again shortly or contact support.";
 
 interface ProfileRow {
   id: string;
@@ -254,7 +256,12 @@ async function signup(input: SignupInput): Promise<AdapterOutcome> {
       ...(redirectTo ? { emailRedirectTo: redirectTo } : {}),
     },
   });
-  if (error) return { kind: "error", message: error.message };
+  if (error) {
+    const message = error.message === "Error sending confirmation email"
+      ? EMAIL_DELIVERY_MESSAGE
+      : error.message;
+    return { kind: "error", message };
+  }
   if (!data.session) return { kind: "error", message: CONFIRMATION_MESSAGE };
   return evaluate(data.session);
 }
