@@ -166,8 +166,7 @@ export async function verifyCredentials(email: string, password: string): Promis
 
 /**
  * Demo-only: a locally created account is auto-approved on first successful
- * sign-in. The backend path never does this — approval is an admin action
- * (0008 approve_profile()).
+ * sign-in.
  */
 export function markAccountVerified(accountId: string): void {
   const list = loadAccounts().map((a) => (a.id === accountId ? { ...a, verified: true } : a));

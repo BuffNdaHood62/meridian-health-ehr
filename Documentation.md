@@ -4,6 +4,58 @@ Durable log of meaningful changes and why they were made. Newest first.
 
 ---
 
+## 2026-11-27 — Waiting approval removed for testing; Supabase signup is immediate
+
+The requester chose **auto-approve all signups** because there is no administrator
+and the system is still being tested. Demo signup already auto-approved, so the
+change applies to the Supabase-backed path.
+
+### What changed
+
+- Removed `/login/pending`, `PendingApproval.tsx`, the `unverified` identity state,
+  and the `approval_required` transition. Inactive or revoked Supabase profiles are
+  still signed out and now return a normal sign-in error instead of a waiting screen.
+- Supabase signup evaluates the session GoTrue returns. A confirmed session enters
+  the app immediately; when email confirmation is required and no session is
+  returned, the form asks the tester to confirm their email and sign in.
+- Signup now offers Doctor, Nurse, Reception and Lab. Admin is not publicly
+  selectable; `0012` clamps a forged Admin request to reception in SQL.
+- `0012_auto_approve_signups.sql` replaces `handle_new_user()` for testing: it
+  verifies the profile, creates active membership, allocates a role instance and
+  assignment, records `profile_approved`, and backfills existing pending testers.
+  Its helper is not executable by `anon` or `authenticated`.
+- Confirm-signup email copy, the runbook, backend README, ADR-0003 note and risk
+  register now describe testing auto-approval instead of administrator approval.
+
+### Security boundary
+
+This intentionally reopens R-22 and is recorded as **R-25**. Public clinical signup
+can enter the clinic tenant without an administrator. Admin self-grant remains
+blocked, email confirmation and revocation still apply, and the behavior must be
+disabled or reversed before real PHI or a public deployment. `0011` remains the
+future invite-only target and intentionally replaces `handle_new_user()` again.
+
+### Verification and limits
+
+- `npm run test`: **73/73 passed** (11 files), including new Supabase adapter tests
+  for immediate signup, confirmation-required signup and inactive-profile rejection.
+- `npm run typecheck`: passed.
+- `npm run lint`: 0 errors, the same 7 Fast Refresh warnings.
+- Exact CI lint gate: passed.
+- `npm run build` and `npm run build:demo`: passed; each produced a ~768 kB single
+  HTML artifact.
+- Built-screen browser check: **not completed**. The preview server started twice,
+  but Qoder's Browser tab did not attach and AX/navigation calls timed out, including
+  a retry after the panel was opened. No UI success is claimed.
+- `0012` was applied transactionally to `zdtaludwhxnjutosrnvi` on 2026-11-27 and
+  recorded in remote migration history. Read-only checks confirm: 0 pending profiles,
+  0 verified profiles without active membership, the trigger calls the auto-approval
+  helper, and neither `anon` nor `authenticated` can execute that helper directly.
+  A rolled-back trigger probe created a verified Doctor with matching membership and
+  assignment, and a forged Admin request became verified Reception with matching
+  membership and assignment. No probe accounts remain. A real email-confirmation
+  round-trip remains to be verified.
+
 ## 2026-11-13 — Owner/admin handover to `michaelnnamdi62@gmail.com` authored; the ask was first read as a break-glass change
 
 The request came as "change the break-glass admin account to

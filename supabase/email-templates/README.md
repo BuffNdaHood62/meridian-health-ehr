@@ -39,6 +39,6 @@ system is how a recipient learns about the product from a phishing-looking link.
 ## Copy rules these files follow
 
 No expiry times (this project configures none), no "secure/encrypted/HIPAA/SOC 2" wording,
-no claim that anything was *detected* — only that a change was *requested*. Confirming an
-email is stated as separate from being approved, because `approve_profile()` grants access
-and that distinction is what the pending screen is for.
+no claim that anything was *detected* — only that a change was *requested*. Confirm signup
+states that confirmation activates testing access and that Admin is assigned separately;
+there is no waiting-approval screen.

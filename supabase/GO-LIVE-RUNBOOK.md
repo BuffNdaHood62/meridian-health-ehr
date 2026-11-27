@@ -5,6 +5,13 @@ identity and RLS defects (R-05, R-17, R-18, R-19) are closed and verified on the
 cloud project; R-04, R-06, R-08, R-12, R-13, R-14 and R-15 are the reasons this
 still must not hold real patient records.
 
+> **Testing amendment (2026-11-27):** `0012_auto_approve_signups.sql` is authored to
+> remove the administrator bottleneck. It auto-approves public clinical signups,
+> creates active membership, and clamps Admin requests to reception. It was **applied
+> on 2026-11-27** and migration history records `0012` remotely. There is no
+> `/login/pending` route in the client. This intentionally reopens R-22/R-25 for
+> testing and must be disabled or reversed before real PHI.
+
 ## Status on the cloud project (2026-10-26)
 
 Sections 1–3, 5b, 6 and 7 are **done** on `zdtaludwhxnjutosrnvi`: `db push` applied
@@ -181,9 +188,9 @@ select proname from pg_proc p join pg_namespace n on n.oid=p.pronamespace
       back to Site URL, so setting the allowlist is the fix and the code alone does
       nothing.
       Verify after saving: run a real signup on the deployed site, open the mail, and
-      confirm the link's host is `meridian-health-ehr.vercel.app`. The click should
-      land on `/login/pending` — confirmed email is not the same as `verified`, which
-      only `approve_profile()` grants (R-14).
+      confirm the link's host is `meridian-health-ehr.vercel.app`. After `0012` is
+      applied, the confirmed tester should reach sign-in and then the dashboard with
+      their selected clinical role; Admin is assigned separately (R-25).
 - [ ] `INVITE_REDIRECT_TO` must be set on the `invite` Edge Function to the same
       origin, or ADR-0005 invitations inherit the localhost Site URL too.
 - [ ] Authentication → Email Templates: paste the bodies from
@@ -478,9 +485,9 @@ Order matters: env **before** push.
    `VITE_APP_MODE` (unset resolves `vite build` to production).
 2. Push `vercel.json` (`buildCommand: npm run build`, already set locally).
 3. Load the deployed URL: it must show the real sign-in screen, **not**
-   `Application not started` and **not** the demo banner. Then sign up an account
-   and confirm the email — the app must land on `/login/pending`, and after
-   `approve_profile` the same credentials must reach the dashboard.
+   `Application not started` and **not** the demo banner. Then sign up an account,
+   confirm the email, and sign in — after `0012` the tester must reach the dashboard
+   with their selected clinical role and no approval wait.
 
 A `StartupBlocked` page after step 3 means the env vars were missing at *build*
 time — Vite inlines them, so a redeploy is required, not a restart.

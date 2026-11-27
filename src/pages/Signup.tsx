@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { ROLE_ROUTES, type Role } from "../users";
 import { DEMO_MODE } from "../config";
 
-const ROLES: Role[] = ["doctor", "nurse", "reception", "admin", "lab"];
+const ROLES: Role[] = ["doctor", "nurse", "reception", "lab"];
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -32,13 +32,6 @@ export default function Signup() {
     setBusy(false);
     if (result.error) {
       setError(result.error);
-      return;
-    }
-    if (result.next === "pending") {
-      navigate("/login/pending", {
-        replace: true,
-        state: { email: email.trim(), created: true },
-      });
       return;
     }
     navigate("/", { replace: true });
@@ -83,7 +76,7 @@ export default function Signup() {
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Requested role</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">Role</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as Role)}
@@ -97,9 +90,8 @@ export default function Signup() {
               ))}
             </select>
             <p className="mt-1 text-[11px] text-slate-400">
-              {DEMO_MODE
-                ? `Grants access to ${ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}`
-                : `Requested access: ${ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}. An administrator approves this before sign-in.`}
+              Grants access to {ROLE_ROUTES[role].filter((r) => r !== "/").map((r) => r.slice(1)).join(", ") || "dashboard"}.
+              Admin access is assigned separately.
             </p>
           </div>
           <div>
@@ -157,7 +149,7 @@ export default function Signup() {
           <Lock className="h-3 w-3" /> <ShieldCheck className="h-3 w-3" />
           {DEMO_MODE
             ? "Demo workspace · this account is stored in your browser only"
-            : "Authorized personnel only · Activity logged"}
+            : "Testing access · new accounts activate automatically · activity logged"}
         </p>
       </div>
     </div>

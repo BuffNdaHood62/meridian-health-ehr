@@ -8,7 +8,8 @@ memberships + role instances + `role_permissions` on 2026-11-05, after being
 verified end-to-end in a rolled-back transaction). `0011` — two-owner
 invite-only provisioning (ADR-0005) — is authored and **not applied**: it aborts
 until the owner set is bootstrapped, and `wellnesswithwritingale@gmail.com` does
-not exist yet. For any other project, start from
+not exist yet. `0012` — testing auto-approval for public clinical signups — was
+applied on 2026-11-27. For any other project, start from
 `supabase migration list` — do not assume.
 
 ## What's here
@@ -40,6 +41,10 @@ not exist yet. For any other project, start from
   guard triggers (immutability, last-owner protection, break-glass cannot own),
   `org_id` nullable, `handle_new_user` grants no tenancy, owner-only admin grants
   (ADR-0005). **Authored, not applied**; requires `0010` (applied).
+- `migrations/0012_auto_approve_signups.sql` — testing-only decision: public
+  clinical signups immediately receive verified membership and their selected role;
+  Admin requests are clamped to reception. **Applied 2026-11-27** after `0010`;
+  any future `0011` cutover intentionally replaces this trigger again (R-25).
 - `functions/invite/index.ts` — owner-only email invite that sends a GoTrue invite
   link (the invitee sets their own password). The only holder of the service key.
   **Not deployed and not type-checked** — no Deno runtime here; see `functions/README.md`.
@@ -107,33 +112,33 @@ SUPABASE_PROJECT_REF=xxxx node scripts/bootstrap-supabase.mjs --cloud
 `IdentityAdapter` at module load: `createSupabaseIdentityAdapter()` when
 `VITE_SUPABASE_*` are set, `createDemoIdentityAdapter()` otherwise. Both live in
 `src/identity/` and both drive the same state machine
-(`anonymous | password_ok | unverified | active | step_up_required | expired`).
+(`anonymous | password_ok | active | step_up_required | expired`).
 Pages keep using `useAuth()` and the hook contract is unchanged in shape — read
 `useAuth().mode` for copy, never `isSupabaseConfigured`. `appendAudit()` routes
 to the `append_audit` RPC when configured.
 
 Sign-in (email/password): `useAuth().loginWithEmail(email, pw)` resolves to
 `{ error, next }`; `next` is `"app"` (route to `from`), `"mfa"` (→
-`/login/mfa`), `"pending"` (→ `/login/pending`) or `"none"` on error.
+`/login/mfa`) or `"none"` on error.
 `verifyMfa(code)` challenges the enrolled TOTP factor. `stepUp(password, code?)`
 backs `/login/step-up`; `checkStepUp()` is what `RouteAuthenticationGate` calls
 on `/orders` and resolves to a reason or null.
 
 Sign-up: `useAuth().signup({name, email, role, password})` → Supabase sends a
-verification email; profile auto-created by the trigger. The submitted role is a
-**request** (`profiles.requested_role`): the account starts as `reception` and
-`verified=false`. The adapter signs that session out and returns `unverified`, so
-`/login/pending` is the landing screen. An admin calls
-`approve_profile(user_id, role)` (or the invitee redeems a token via
-`accept_invitation(token)`) before the account can read anything. Passwordless:
-enable Email OTP in Studio and call `supabase.auth.signInWithOtp({ email })`.
+verification email and the trigger creates the profile. Testing migration `0012`
+auto-approves the selected clinical role, creates active membership and a role
+assignment, and marks the profile verified. Admin is excluded from the SPA and
+clamped to reception in SQL. If GoTrue requires confirmation and returns no
+session, the form asks the tester to confirm their email and sign in; there is no
+waiting-approval screen. Passwordless: enable Email OTP in Studio and call
+`supabase.auth.signInWithOtp({ email })`.
 
 TOTP is the second factor. It is enforced server-side by `has_recent_mfa()`
 (AAL2 + a recent `totp`/`webauthn` `amr` entry) on order authoring and medication
 administration. The client has challenge/step-up screens (`/login/mfa`,
 `/login/step-up`) **and** TOTP enrolment (Settings → Two-factor, which also changes
-the password). Still missing: an admin approval/invitation UI and the owner-facing
-member management panel, so those remain SQL or Dashboard operations (ADR-0003, ADR-0005).
+the password). Still missing: the owner-facing member management panel, so role and
+invitation administration remain SQL or Dashboard operations (ADR-0005).
 
 ## Verification checklist
 
@@ -167,7 +172,8 @@ Still open — none of these can pass until the app runs against a backend:
       → wrong code shows an error, correct code reaches the app. Zero factors are
       enrolled today, so order authoring from a real session is blocked.
 - [ ] `/orders` at AAL1 shows the step-up screen and never paints the table.
-- [ ] Sign up → confirm email → `/login/pending` → `approve_profile` → dashboard.
+- [ ] With `0012` applied, sign up → confirm email → sign in → dashboard with the selected
+      clinical role and active membership; a forged `admin` request becomes reception.
 - [ ] Compose a message in `/messages` → row lands with `sent=true`; reload
       shows it under Sent.
 - [ ] `insert into audit_log` as the anon client → permission denied (RPC only).
@@ -207,8 +213,8 @@ Still open — none of these can pass until the app runs against a backend:
   cannot author orders until `require_step_up_for_orders` is explicitly
   disabled — and that downgrade itself needs step-up and is audited. Treat it as
   an incident, not a configuration convenience.
-- A fresh project has no verified admin, so `approve_profile` has no caller at
-  first. Bootstrap the initial admin with direct SQL (header of `0008`).
+- A fresh project has no verified admin. Testing migration `0012` auto-approves
+  clinical signups; Admin still requires a direct SQL bootstrap (header of `0008`).
 
 ## Optional extensions
 
