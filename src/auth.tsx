@@ -41,7 +41,7 @@ import {
 //   has_recent_mfa in 0008) remains authoritative.
 // ============================================================================
 
-export type AuthNext = "app" | "mfa" | "pending" | "none";
+export type AuthNext = "app" | "mfa" | "none";
 
 export interface AuthResult {
   error: string;
@@ -90,8 +90,6 @@ function outcomeToEvent(outcome: AdapterOutcome): IdentityEvent | null {
       return { type: "mfa_challenge", email: outcome.email };
     case "active":
       return { type: "signed_in", user: outcome.user, email: outcome.email ?? null };
-    case "unverified":
-      return { type: "approval_required", email: outcome.email, reason: outcome.message };
     case "expired":
       return { type: "session_expired", reason: outcome.message };
     case "error":
@@ -121,8 +119,6 @@ export function AuthProvider({
         return { error: "", next: "app" };
       case "mfa":
         return { error: "", next: "mfa" };
-      case "unverified":
-        return { error: "", next: "pending" };
       case "error":
         return { error: outcome.message, next: "none" };
       case "expired":
@@ -154,9 +150,7 @@ export function AuthProvider({
   useEffect(() => {
     if (!adapter.subscribe) return;
     return adapter.subscribe((outcome) => {
-      // Only an externally ended session may overwrite UI state. A SIGNED_OUT
-      // fired while signing out an unverified profile must not erase the
-      // pending screen, so we gate on the current status.
+      // Only an externally ended session may overwrite UI state.
       if (outcome.kind !== "anonymous") return;
       if (statusRef.current === "active" || statusRef.current === "step_up_required") {
         dispatch({ type: "signed_out" });
@@ -323,9 +317,6 @@ export function RequireAuth() {
   if (!ready) return <RestoringSession />;
   if (status === "password_ok") {
     return <Navigate to="/login/mfa" replace state={{ from: location.pathname }} />;
-  }
-  if (status === "unverified") {
-    return <Navigate to="/login/pending" replace />;
   }
   if (!isAuthenticated || !currentUser) {
     return (

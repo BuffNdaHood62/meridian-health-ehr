@@ -23,8 +23,6 @@ export default function LoginMfa() {
     if (!ready) return;
     if (status === "active" || status === "step_up_required") {
       navigate(from, { replace: true });
-    } else if (status === "unverified") {
-      navigate("/login/pending", { replace: true });
     } else if (status !== "password_ok") {
       navigate("/login", { replace: true });
     }

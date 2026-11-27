@@ -168,8 +168,7 @@ async function restore(): Promise<AdapterOutcome> {
 async function signIn(email: string, password: string): Promise<AdapterOutcome> {
   const account = await verifyCredentials(email, password);
   if (!account) return { kind: "error", message: "Invalid email or password." };
-  // Demo accounts are auto-approved on first successful sign-in; the backend
-  // path requires an admin approval (0008).
+  // Demo accounts are auto-approved on first successful sign-in.
   markAccountVerified(account.id);
   return startSession(accountToUser(account), account.email);
 }

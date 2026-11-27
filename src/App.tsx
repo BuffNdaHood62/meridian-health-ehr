@@ -6,7 +6,6 @@ import { AppLayout } from "./components/layout/AppLayout";
 import Login from "./pages/Login";
 import LoginMfa from "./pages/LoginMfa";
 import LoginStepUp from "./pages/LoginStepUp";
-import PendingApproval from "./pages/PendingApproval";
 import Signup from "./pages/Signup";
 import DemoPicker from "./pages/DemoPicker";
 import Dashboard from "./pages/Dashboard";
@@ -41,7 +40,6 @@ export default function App() {
               redirects if the state machine says it is not the right step. */}
           <Route path="/login/mfa" element={<LoginMfa />} />
           <Route path="/login/step-up" element={<LoginStepUp />} />
-          <Route path="/login/pending" element={<PendingApproval />} />
           <Route path="/signup" element={<Signup />} />
           {/* Demo role picker — public, outside the auth gate, like /login. */}
           <Route path="/demo" element={<DemoPicker />} />

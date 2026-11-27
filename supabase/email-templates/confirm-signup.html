@@ -19,13 +19,13 @@
   Copy rules (root AGENTS.md — no claimed control the code does not implement):
   - No expiry time: the confirmation token has no configured lifetime here.
   - No "secure/encrypted/HIPAA" wording.
-  - Says plainly that confirming is NOT approval; approve_profile() grants access (R-14).
+  - Says confirmation activates testing access; Admin is assigned separately (R-25).
   - support@example.org is the same deploy-time placeholder as VITE_SUPPORT_EMAIL.
     Replace both together so mail and app never disagree.
 -->
 <div style="margin:0;padding:0;background-color:#f1f5f9;">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
-    Confirm this address to activate sign-in. Access still needs an administrator.
+    Confirm this address to activate testing sign-in.
   </div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f1f5f9;">
@@ -79,15 +79,14 @@
                 <a href="{{ .ConfirmationURL }}" style="color:#13726c;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
               </div>
 
-              <!-- Approval notice: brand-50 panel with a brand-600 rule -->
+              <!-- Testing-access notice: brand-50 panel with a brand-600 rule -->
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0 0 0;">
                 <tr>
                   <td style="background-color:#eff9f8;border-left:3px solid #13726c;border-radius:8px;padding:14px 16px;">
                     <div style="font-size:13px;line-height:20px;color:#115b58;">
-                      <span style="font-weight:700;">Confirming is not the same as being approved.</span>
-                      A platform administrator approves every account and sets its role, so after
-                      confirming you will see the pending-approval screen until that happens. There is
-                      nothing else for you to do in the meantime.
+                      <span style="font-weight:700;">Testing access activates after confirmation.</span>
+                      Your selected clinical role is applied automatically. Admin access is assigned
+                      separately. This workspace is for testing and must not hold real patient records.
                     </div>
                   </td>
                 </tr>

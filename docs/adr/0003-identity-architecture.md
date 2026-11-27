@@ -2,7 +2,13 @@
 
 Date: 2026-10-26
 Status: Accepted — client seam implemented; `0008` applied to project `zdtaludwhxnjutosrnvi` and its gates verified (2026-10-26)
-Relates to: `docs/risk-register.md` R-14, R-17, R-18, R-19; `supabase/migrations/0008_identity_hardening.sql`; `src/auth.tsx`, `src/identity/*`, ADR-0002
+Relates to: `docs/risk-register.md` R-14, R-17, R-18, R-19, R-25; `supabase/migrations/0008_identity_hardening.sql`; `src/auth.tsx`, `src/identity/*`, ADR-0002
+
+> Testing amendment (2026-11-27): the waiting-approval state and `/login/pending`
+> screen are removed. `0012_auto_approve_signups.sql` auto-approves public clinical
+> signups because no administrator exists during testing; Admin remains excluded and
+> is clamped to reception in SQL. The approval design below is retained as history and
+> as the target for a future invite-only deployment. See R-25 before real PHI.
 
 ## Context
 

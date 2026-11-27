@@ -13,7 +13,6 @@ export type AdapterOutcome =
   | { kind: "anonymous" }
   | { kind: "mfa"; email: string }
   | { kind: "active"; user: WWWUser; email?: string }
-  | { kind: "unverified"; email: string; message: string }
   | { kind: "expired"; message: string }
   | { kind: "error"; message: string };
 

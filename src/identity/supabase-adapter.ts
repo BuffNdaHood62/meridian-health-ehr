@@ -19,7 +19,7 @@ import type { Role, WWWUser } from "../users";
 // - The client decides which screen to show; the server enforces access. RLS
 //   helpers in 0008 fail closed for unverified/revoked profiles, and order
 //   writes require a recent AAL2 `amr` entry.
-// - An unverified or revoked profile is signed out immediately so this browser
+// - An inactive or revoked profile is signed out immediately so this browser
 //   never holds a token that predates the gate (0008 also neuters it server-side).
 // ============================================================================
 
@@ -27,13 +27,12 @@ import type { Role, WWWUser } from "../users";
 const STEP_UP_MAX_AGE_MS = 8 * 3600_000;
 const MFA_METHODS = new Set(["totp", "webauthn"]);
 
-const PENDING_MESSAGE =
-  "Your account is waiting for administrator approval. You can sign in once access is granted.";
 const REVOKED_MESSAGE = "Account access has been revoked. Contact an administrator.";
 const NO_PROFILE_MESSAGE =
   "No staff profile is linked to this account. Contact an administrator.";
-const SIGNUP_MESSAGE =
-  "Check your email to confirm the address. An administrator must also approve access before you can sign in.";
+const INACTIVE_MESSAGE = "Account access is not active. Contact an administrator.";
+const CONFIRMATION_MESSAGE =
+  "Account created. Check your email to confirm the address, then sign in.";
 
 interface ProfileRow {
   id: string;
@@ -82,15 +81,15 @@ async function evaluate(session: Session | null): Promise<AdapterOutcome> {
   }
   if (!profile) {
     await client.auth.signOut({ scope: "local" });
-    return { kind: "unverified", email, message: NO_PROFILE_MESSAGE };
+    return { kind: "error", message: NO_PROFILE_MESSAGE };
   }
   if (profile.disabled_at) {
     await client.auth.signOut({ scope: "local" });
-    return { kind: "unverified", email, message: REVOKED_MESSAGE };
+    return { kind: "error", message: REVOKED_MESSAGE };
   }
   if (!profile.verified) {
     await client.auth.signOut({ scope: "local" });
-    return { kind: "unverified", email, message: PENDING_MESSAGE };
+    return { kind: "error", message: INACTIVE_MESSAGE };
   }
 
   const { data: aal, error: aalError } =
@@ -247,7 +246,7 @@ async function signup(input: SignupInput): Promise<AdapterOutcome> {
   const client = requireSupabase();
   const email = input.email.trim();
   const redirectTo = emailRedirectTo();
-  const { error } = await client.auth.signUp({
+  const { data, error } = await client.auth.signUp({
     email,
     password: input.password,
     options: {
@@ -256,12 +255,8 @@ async function signup(input: SignupInput): Promise<AdapterOutcome> {
     },
   });
   if (error) return { kind: "error", message: error.message };
-
-  // The submitted role is a *request* (profiles.requested_role, 0008); the
-  // account starts unverified. Drop any session GoTrue created so the browser
-  // does not hold a token for an unapproved profile.
-  await client.auth.signOut({ scope: "local" });
-  return { kind: "unverified", email: email.toLowerCase(), message: SIGNUP_MESSAGE };
+  if (!data.session) return { kind: "error", message: CONFIRMATION_MESSAGE };
+  return evaluate(data.session);
 }
 
 async function signOut(scope: "local" | "global" = "local"): Promise<void> {
@@ -393,7 +388,7 @@ export function createSupabaseIdentityAdapter(): IdentityAdapter {
     subscribe(listener) {
       const { data } = requireSupabase().auth.onAuthStateChange((event) => {
         // Only SIGNED_OUT is pushed; the provider ignores it unless it is
-        // currently in an active state, so pending/MFA flows are not clobbered.
+        // currently in an active state, so MFA flows are not clobbered.
         if (event === "SIGNED_OUT") listener({ kind: "anonymous" });
       });
       return () => data.subscription.unsubscribe();

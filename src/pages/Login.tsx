@@ -31,10 +31,6 @@ export default function Login() {
       navigate("/login/mfa", { replace: true, state: { from } });
       return;
     }
-    if (result.next === "pending") {
-      navigate("/login/pending", { replace: true, state: { email: email.trim() } });
-      return;
-    }
     navigate(from, { replace: true });
   };
 
@@ -194,7 +190,7 @@ export default function Login() {
             <Lock className="h-3 w-3" />
             {DEMO_MODE
               ? "Demo workspace · sample records live in this browser only · no server, no real patients"
-              : "Authorized personnel only · Sessions open until sign-out · Activity logged"}
+              : "New accounts activate automatically · Sessions open until sign-out · Activity logged"}
           </p>
         </div>
       </div>

@@ -30,22 +30,6 @@ describe("identityReducer", () => {
     expect(isPending(next)).toBe(false);
   });
 
-  it("records a pending approval with the adapter message", () => {
-    const next = identityReducer(ANONYMOUS, {
-      type: "approval_required",
-      email,
-      reason: "Waiting for an administrator.",
-    });
-    expect(next).toMatchObject({
-      status: "unverified",
-      email,
-      user: null,
-      reason: "Waiting for an administrator.",
-    });
-    expect(isPending(next)).toBe(true);
-    expect(isSignedIn(next)).toBe(false);
-  });
-
   it("only asks for step-up from a signed-in state", () => {
     expect(identityReducer(ANONYMOUS, { type: "step_up_required", reason: "stale" })).toBe(ANONYMOUS);
 

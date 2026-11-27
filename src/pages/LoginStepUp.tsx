@@ -31,10 +31,6 @@ export default function LoginStepUp() {
       navigate("/login/mfa", { replace: true, state: { from } });
       return;
     }
-    if (status === "unverified") {
-      navigate("/login/pending", { replace: true });
-      return;
-    }
     if (!isAuthenticated) {
       navigate("/login", { replace: true });
       return;
