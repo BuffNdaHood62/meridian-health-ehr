@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom";
 import { ShieldCheck, Activity, HeartPulse, Fingerprint, Lock } from "lucide-react";
 import { useAuth } from "../auth";
 import { DEMO_MODE } from "../config";
+import { PasswordInput } from "../components/ui/PasswordInput";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -133,8 +134,7 @@ export default function Login() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

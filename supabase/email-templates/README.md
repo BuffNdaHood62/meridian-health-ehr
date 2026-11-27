@@ -42,3 +42,8 @@ No expiry times (this project configures none), no "secure/encrypted/HIPAA/SOC 2
 no claim that anything was *detected* — only that a change was *requested*. Confirm signup
 states that confirmation activates testing access and that Admin is assigned separately;
 there is no waiting-approval screen.
+
+If signup returns **Error sending confirmation email** and Auth logs say
+`no such template "header.html"`, the Dashboard body still contains a partial include.
+Replace the entire Confirm signup body with `confirm-signup.html`; do not paste only the
+card or keep `{{ template "header.html" }}` unless that partial actually exists.
